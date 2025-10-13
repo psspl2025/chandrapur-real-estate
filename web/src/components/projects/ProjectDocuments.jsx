@@ -448,10 +448,10 @@ export default function ProjectDocuments({
                                     className="relative border border-slate-700 rounded overflow-hidden"
                                   >
                                     <img
-                                      src={p.data}
-                                      alt={`p${i + 1}`]
-                                      className="w-40 h-56 object-cover block"
-                                    />
+   src={p.data}
+   alt={`p${i + 1}`}
+   className="w-40 h-56 object-cover block"
+ />
                                     <button
                                       className="absolute top-1 right-1 text-xs px-1.5 py-0.5 bg-rose-800/80 rounded"
                                       onClick={() => removePage(i)}
