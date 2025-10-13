@@ -1,0 +1,651 @@
+// src/routes/projects.js
+import express from "express";
+import Project from "../models/Project.js";
+import Property from "../models/Property.js";
+
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
+import xlsx from "xlsx";
+import { google } from "googleapis";
+
+const router = express.Router();
+
+/* ====================== GOOGLE DRIVE OAUTH (SINGLE USER) ====================== */
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// simple token store on disk (replace with DB if you want)
+const OAUTH_TOKEN_PATH = path.join(__dirname, "..", "..", "oauth_token.json");
+
+function readSavedToken() {
+  try {
+    return JSON.parse(fs.readFileSync(OAUTH_TOKEN_PATH, "utf8"));
+  } catch {
+    return null;
+  }
+}
+function saveToken(token) {
+  fs.writeFileSync(OAUTH_TOKEN_PATH, JSON.stringify(token, null, 2), "utf8");
+}
+
+// ---- env (trim everything to avoid invisible whitespace issues)
+const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID || "").trim();
+const GOOGLE_CLIENT_SECRET = (process.env.GOOGLE_CLIENT_SECRET || "").trim();
+const GOOGLE_REDIRECT_URI = (process.env.GOOGLE_REDIRECT_URI || "").trim();
+const GDRIVE_FOLDER_ENV = (process.env.GDRIVE_FOLDER_ID || "").trim();
+
+// accept folder URL or just ID
+function extractFolderId(v) {
+  if (!v) return undefined;
+  const m = String(v).match(/[-\w]{25,}/); // typical GDrive id length/pattern
+  return m ? m[0] : v;
+}
+const GDRIVE_FOLDER_ID = extractFolderId(GDRIVE_FOLDER_ENV);
+
+function getOAuth2Client() {
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REDIRECT_URI) {
+    throw new Error(
+      "[GDRIVE] Missing GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REDIRECT_URI"
+    );
+  }
+  return new google.auth.OAuth2(
+    GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET,
+    GOOGLE_REDIRECT_URI
+  );
+}
+
+async function getDriveClient() {
+  const oauth2 = getOAuth2Client();
+  const token = readSavedToken();
+  if (!token) {
+    const url = oauth2.generateAuthUrl({
+      access_type: "offline",
+      prompt: "consent",
+      scope: ["https://www.googleapis.com/auth/drive.file"],
+      redirect_uri: GOOGLE_REDIRECT_URI,
+    });
+    return { drive: null, needsAuth: true, url };
+  }
+  oauth2.setCredentials(token);
+  return { drive: google.drive({ version: "v3", auth: oauth2 }), needsAuth: false };
+}
+
+async function uploadToPersonalDrive(localPath, { originalname, mimetype }) {
+  const { drive, needsAuth, url } = await getDriveClient();
+  if (needsAuth) {
+    throw new Error(
+      `Google Drive not connected yet. Open this once to authorize: ${url}`
+    );
+  }
+
+  console.log("[GDRIVE] Uploading:", { originalname, mimetype, GDRIVE_FOLDER_ID });
+  const createRes = await drive.files.create({
+    requestBody: {
+      name: originalname,
+      parents: GDRIVE_FOLDER_ID ? [GDRIVE_FOLDER_ID] : undefined,
+      mimeType: mimetype || "application/octet-stream",
+    },
+    media: {
+      mimeType: mimetype || "application/octet-stream",
+      body: fs.createReadStream(localPath),
+    },
+    fields: "id,name,webViewLink,webContentLink",
+  });
+
+  // optional: make link public (remove/adjust to keep private)
+  try {
+    await drive.permissions.create({
+      fileId: createRes.data.id,
+      requestBody: { role: "reader", type: "anyone" },
+    });
+  } catch (e) {
+    console.warn("[GDRIVE] permissions.create failed (continuing):", e?.message || e);
+  }
+
+  const meta = await drive.files.get({
+    fileId: createRes.data.id,
+    fields: "id,name,webViewLink,webContentLink",
+  });
+
+  console.log("[GDRIVE] Uploaded OK:", meta.data);
+  return {
+    fileId: meta.data.id,
+    name: meta.data.name,
+    webViewLink: meta.data.webViewLink,
+    webContentLink: meta.data.webContentLink,
+  };
+}
+
+/* ---------------- OAuth routes (MUST exist for /api/projects/google/*) ---------------- */
+router.get("/google/auth", (req, res) => {
+  try {
+    const oauth2 = getOAuth2Client();
+    const url = oauth2.generateAuthUrl({
+      access_type: "offline",
+      prompt: "consent",
+      scope: ["https://www.googleapis.com/auth/drive.file"],
+      redirect_uri: GOOGLE_REDIRECT_URI, // explicit
+    });
+
+    console.log("[GDRIVE] Auth URL:", url);
+    if (req.query.show === "1") return res.type("text/plain").send(url); // debug
+    return res.redirect(url);
+  } catch (e) {
+    return res.status(500).send("OAuth init error: " + e.message);
+  }
+});
+
+router.get("/google/callback", async (req, res) => {
+  try {
+    const { code } = req.query;
+    if (!code) return res.status(400).send('Missing "code" in query.');
+    const oauth2 = getOAuth2Client();
+
+    // pass redirect_uri explicitly in the token exchange
+    const { tokens } = await oauth2.getToken({ code, redirect_uri: GOOGLE_REDIRECT_URI });
+    saveToken(tokens);
+    return res.send("Google Drive connected. You can close this tab.");
+  } catch (e) {
+    console.error(e);
+    return res.status(500).send("OAuth callback error: " + e.message);
+  }
+});
+
+// quick env sanity check
+router.get("/google/debug", (_req, res) => {
+  res.json({
+    hasClientId: !!GOOGLE_CLIENT_ID,
+    hasClientSecret: !!GOOGLE_CLIENT_SECRET,
+    redirectUri: GOOGLE_REDIRECT_URI,
+    folderId: GDRIVE_FOLDER_ID || null,
+  });
+});
+/* ================================================================================ */
+
+/* ============================ UPLOADS (LOCAL TEMP) ============================= */
+const UPLOAD_DIR = path.join(__dirname, "..", "..", "public", "uploads");
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
+  filename: (_req, file, cb) => {
+    const safe = file.originalname.replace(/[^\w.\-]+/g, "_");
+    cb(null, `${Date.now()}-${safe}`);
+  },
+});
+const upload = multer({ storage });
+
+/* ================================ UTILITIES =================================== */
+const ok = (s) => String(s).toUpperCase() === "APPROVED";
+const sum = (arr, pick) => (arr || []).reduce((a, b) => a + Number(pick(b) || 0), 0);
+
+function findDoc(docs, name) {
+  return (docs || []).find(
+    (x) => (x.name || "").toLowerCase() === String(name).toLowerCase()
+  );
+}
+
+function computeProjectSummary(p) {
+  const plots = p.plots || [];
+    const totalPlotableSqm = sum(plots, (x) => x.area_sqm);
+  const totalPlotableSqft = sum(plots, (x) => x.area_sqft);
+  const totalPlotableHR = sum(plots, (x) => x.hr);
+  const ratePerSqft = p.financials?.ratePerSqft || 0;
+
+  const occupants = plots.flatMap((pl) => pl.occupant_names || []);
+  const aadhaar = plots.flatMap((pl) => pl.aadhaar_numbers || []);
+
+  const docs = p.documents || [];
+  const checklist = {
+    applicationLetter: ok(findDoc(docs, "Official Application letter")?.status),
+    approvalLetter: ok(
+      findDoc(docs, "Official Permission letter(Approval letter)")?.status
+    ),
+    sevenTwelve: ok(findDoc(docs, "7/12")?.status),
+    cmcApproval: ok(findDoc(docs, "CMC Approval")?.status),
+    landSurveyMap: ok(findDoc(docs, "Land Survey Map 'ka prat'")?.status),
+    tentativeLayout: ok(findDoc(docs, "Sanctioned Tentative layout map")?.status),
+    finalLayout: ok(
+      findDoc(docs, "Sanctioned Demarcated/Final layout map")?.status
+    ),
+    registryDoc: ok(findDoc(docs, "Registry Document")?.status),
+  };
+
+  const docFiles = {
+    applicationLetter:
+      findDoc(docs, "Official Application letter")?.file?.viewLink ||
+      findDoc(docs, "Official Application letter")?.file?.url ||
+      null,
+    approvalLetter:
+      findDoc(docs, "Official Permission letter(Approval letter)")?.file
+        ?.viewLink ||
+      findDoc(docs, "Official Permission letter(Approval letter)")?.file?.url ||
+      null,
+    sevenTwelve:
+      findDoc(docs, "7/12")?.file?.viewLink ||
+      findDoc(docs, "7/12")?.file?.url ||
+      null,
+    cmcApproval:
+      findDoc(docs, "CMC Approval")?.file?.viewLink ||
+      findDoc(docs, "CMC Approval")?.file?.url ||
+      null,
+    landSurveyMap:
+      findDoc(docs, "Land Survey Map 'ka prat'")?.file?.viewLink ||
+      findDoc(docs, "Land Survey Map 'ka prat'")?.file?.url ||
+      null,
+    tentativeLayout:
+      findDoc(docs, "Sanctioned Tentative layout map")?.file?.viewLink ||
+      findDoc(docs, "Sanctioned Tentative layout map")?.file?.url ||
+      null,
+    finalLayout:
+      findDoc(docs, "Sanctioned Demarcated/Final layout map")?.file?.viewLink ||
+      findDoc(docs, "Sanctioned Demarcated/Final layout map")?.file?.url ||
+      null,
+    registryDoc:
+      findDoc(docs, "Registry Document")?.file?.viewLink ||
+      findDoc(docs, "Registry Document")?.file?.url ||
+      null,
+  };
+
+  const av = Number(p.financials?.totalAgreementValue || 0);
+  const sd = Number(p.financials?.stampDuty || 0);
+  const rf = Number(p.financials?.registrationFee || 0);
+  const addedTaxTDS =
+    sum(plots, (x) => x.added_tax) || Number(p.financials?.addedTax || 0);
+  const registryValue = av + sd + rf;
+  const totalRegistryValue = registryValue - addedTaxTDS;
+
+  return {
+    _id: p._id,
+    projectId: p.projectId || "",
+    projectName: p.projectName || "",
+    projectType: p.projectType || "",
+    status: p.status || "",
+    bookingStatus: p.bookingStatus || "",
+    launchDate: p.launchDate || null,
+    completionDate: p.completionDate || null,
+    locationDetails: {
+      address: p.locationDetails?.address || "",
+      mouza: p.locationDetails?.mouza || "",
+      tehsil: p.locationDetails?.tehsil || "",
+      district: p.locationDetails?.district || "",
+      surveyNo: p.locationDetails?.surveyNo || "",
+      warg: p.locationDetails?.warg || "",
+    },
+    counts: { noOfPlots: plots.length, occupants: occupants.length },
+    occupants,
+    aadhaar,
+    plots: plots.map((pl) => ({
+      plotNo: pl.plotNo,
+      area_sqm: pl.area_sqm,
+      area_sqft: pl.area_sqft,
+      hr: pl.hr,
+      rate_per_sqft: pl.rate_per_sqft,
+      added_tax: pl.added_tax,
+    })),
+    totals: {
+      totalPlotableSqm,
+      totalPlotableSqft,
+      totalPlotableHR,
+      ratePerSqft,
+      addedTaxTDS,
+    },
+    financials: {
+      totalAgreementValue: av,
+      stampDuty: sd,
+      registrationFee: rf,
+      totalValue: totalRegistryValue, // compat with earlier UI
+      ratePerSqft,
+      registryValue,
+      totalRegistryValue,
+    },
+    docChecklist: checklist,
+    docFiles,
+  };
+}
+
+/* ================================== ROUTES ==================================== */
+
+// health
+router.get("/health", (_req, res) => res.json({ ok: true }));
+
+// create (✅ also seeds a linked Property unless ?seedProperty=0)
+router.post("/", async (req, res) => {
+  try {
+    const doc = await Project.create(req.body);
+
+    const seed = String(req.query.seedProperty ?? "1") === "1";
+    if (seed) {
+      const p = await Property.create({
+        project: doc._id,
+        location_admin: {
+          state: "Maharashtra",
+          district: req.body?.locationDetails?.district || "",
+          taluka:   req.body?.locationDetails?.tehsil   || "",
+          village:  req.body?.locationDetails?.mouza    || "",
+        },
+        parcel: {
+          survey_gat_no: req.body?.locationDetails?.surveyNo || "",
+          area: { hectares: null, acres: null, square_meters: null, square_feet: null },
+        },
+        integration: {
+          search_tokens: [
+            doc.projectId, doc.projectName,
+            req.body?.locationDetails?.district,
+            req.body?.locationDetails?.mouza,
+            req.body?.locationDetails?.tehsil,
+          ].filter(Boolean),
+        },
+      });
+
+      // also link on the project document
+      doc.properties = Array.isArray(doc.properties) ? doc.properties : [];
+      doc.properties.push(p._id);
+      await doc.save();
+    }
+
+    res.status(201).json(doc);
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// list (basic)
+router.get("/", async (req, res) => {
+  const { q, district, status, page = 1, limit = 20 } = req.query;
+  const query = {};
+  if (district) query["locationDetails.district"] = district;
+  if (status) query.status = status;
+  if (q) query.projectName = { $regex: q, $options: "i" };
+
+  const skip = (Number(page) - 1) * Number(limit);
+  const [items, total] = await Promise.all([
+    Project.find(query).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)),
+    Project.countDocuments(query),
+  ]);
+  res.json({ items, total, page: Number(page), limit: Number(limit) });
+});
+
+// list dashboard summaries
+router.get("/summary", async (req, res) => {
+  const { q, district, status, limit = 50 } = req.query;
+  const query = {};
+  if (district) query["locationDetails.district"] = district;
+  if (status) query.status = status;
+  if (q) query.projectName = { $regex: q, $options: "i" };
+
+  const items = await Project.find(query).sort({ createdAt: -1 }).limit(Number(limit));
+  res.json({ items: items.map(computeProjectSummary), total: items.length });
+});
+
+/**
+ * Export Projects + Plots to Excel
+ * KEEP THIS BEFORE any /:id routes to avoid matching "export.xlsx" as :id
+ * GET /api/projects/export.xlsx?q=&district=&status=
+ */
+router.get("/export.xlsx", async (req, res) => {
+  try {
+    const { q, district, status } = req.query;
+    const query = {};
+    if (district) query["locationDetails.district"] = district;
+    if (status) query.status = status;
+    if (q) query.projectName = { $regex: q, $options: "i" };
+
+    const cursor = Project.find(query).sort({ createdAt: -1 }).lean().cursor();
+
+    const projHeaders = [
+      "Project ID","Project Name","Type","Status","Booking Status",
+      "Launch Date","Planned Completion",
+      "District","Tehsil","Mouza","Survey No","Warg","Address",
+      "No. of Plots","Total Plot Area (sq.m)","Total Plot Area (sq.ft)",
+      "Agreement Value","Registry Value","Rate / sq.ft","Added Tax (TDS)","Created At"
+    ];
+    const plotHeaders = [
+      "Project ID","Project Name","Plot No","Area (sq.m)","Area (sq.ft)","HR",
+      "Rate / sq.ft (plot)","Added Tax (plot)","Occupants (names)","Occupants (Aadhaar)"
+    ];
+
+    const wsProj  = xlsx.utils.aoa_to_sheet([projHeaders]);
+    const wsPlots = xlsx.utils.aoa_to_sheet([plotHeaders]);
+    let rp = 1, rpl = 1;
+
+    for await (const p of cursor) {
+      const plots = Array.isArray(p.plots) ? p.plots : [];
+      const totalSqm  = plots.reduce((a, x) => a + (Number(x.area_sqm)  || 0), 0);
+      const totalSqft = plots.reduce((a, x) => a + (Number(x.area_sqft) || 0), 0) || totalSqm * 10.76391041671;
+
+      const av  = Number(p?.financials?.totalAgreementValue || 0);
+      const sd  = Number(p?.financials?.stampDuty || 0);
+      const rf  = Number(p?.financials?.registrationFee || 0);
+      const registryValue = av + sd + rf;
+      const addedTaxTDS   =
+        plots.reduce((a, x) => a + (Number(x.added_tax) || 0), 0) ||
+        Number(p?.financials?.addedTax || 0);
+
+      const projRow = [
+        p.projectId || "",
+        p.projectName || "",
+        p.projectType || "",
+        p.status || "",
+        p.bookingStatus || "",
+        p.launchDate ? new Date(p.launchDate).toISOString().slice(0, 10) : "",
+        p.completionDate ? new Date(p.completionDate).toISOString().slice(0, 10) : "",
+        p.locationDetails?.district || "",
+        p.locationDetails?.tehsil || "",
+        p.locationDetails?.mouza || "",
+        p.locationDetails?.surveyNo || "",
+        p.locationDetails?.warg || "",
+        p.locationDetails?.address || "",
+        plots.length,
+        Number(totalSqm) || "",
+        Number(Math.round(totalSqft * 100) / 100) || "",
+        av || "",
+        registryValue || "",
+        p.financials?.ratePerSqft ?? "",
+        addedTaxTDS ?? "",
+        p.createdAt ? new Date(p.createdAt).toISOString() : "",
+      ];
+      xlsx.utils.sheet_add_aoa(wsProj, [projRow], { origin: { r: rp++, c: 0 } });
+
+      for (const pl of plots) {
+        const row = [
+          p.projectId || "",
+          p.projectName || "",
+          pl.plotNo || "",
+          pl.area_sqm ?? "",
+          pl.area_sqft ?? (pl.area_sqm != null ? Number(pl.area_sqm) * 10.76391041671 : ""),
+          pl.hr ?? "",
+          pl.rate_per_sqft ?? "",
+          pl.added_tax ?? "",
+          Array.isArray(pl.occupant_names) ? pl.occupant_names.join("; ") : "",
+          Array.isArray(pl.aadhaar_numbers) ? pl.aadhaar_numbers.join("; ") : "",
+        ];
+        xlsx.utils.sheet_add_aoa(wsPlots, [row], { origin: { r: rpl++, c: 0 } });
+      }
+    }
+
+    wsProj["!cols"]  = projHeaders.map(() => ({ wch: 20 }));
+    wsPlots["!cols"] = plotHeaders.map(() => ({ wch: 18 }));
+
+    const wb = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(wb, wsProj,  "Projects");
+    xlsx.utils.book_append_sheet(wb, wsPlots, "Plots");
+
+    const buf = xlsx.write(wb, { type: "buffer", bookType: "xlsx" });
+    const dt = new Date().toISOString().slice(0, 10);
+    res.setHeader("Content-Disposition", `attachment; filename="projects_${dt}.xlsx"`);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.send(buf);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/* ------------------------- ID-BASED ROUTES ------------------------- */
+const OID = "([0-9a-fA-F]{24})";
+
+// full by id
+router.get(`/:id(${OID})`, async (req, res) => {
+  const doc = await Project.findById(req.params.id).populate("properties");
+  if (!doc) return res.status(404).json({ error: "not found" });
+  res.json(doc);
+});
+
+// single summary
+router.get(`/:id(${OID})/summary`, async (req, res) => {
+  const p = await Project.findById(req.params.id);
+  if (!p) return res.status(404).json({ error: "not found" });
+  res.json(computeProjectSummary(p));
+});
+
+// update
+router.put(`/:id(${OID})`, async (req, res) => {
+  try {
+    const doc = await Project.findByIdAndUpdate(
+      req.params.id,
+      { $set: req.body },
+      { new: true, runValidators: true }
+    );
+    if (!doc) return res.status(404).json({ error: "not found" });
+    res.json(doc);
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// delete (✅ cascade remove linked properties)
+router.delete(`/:id(${OID})`, async (req, res) => {
+  try {
+    const proj = await Project.findById(req.params.id);
+    if (!proj) return res.status(404).json({ error: "not found" });
+
+    // Collect property ids referenced on the project doc
+    const referencedIds = (proj.properties || []).map(String);
+
+    // Delete properties that either:
+    // 1) are referenced in proj.properties, OR
+    // 2) are linked via the `project` field
+    const filters = [];
+    if (referencedIds.length) filters.push({ _id: { $in: referencedIds } });
+    filters.push({ project: proj._id });
+
+    const deleteFilter = filters.length === 1 ? filters[0] : { $or: filters };
+    const delRes = await Property.deleteMany(deleteFilter);
+    const deletedProps = delRes?.deletedCount || 0;
+
+    // Finally delete the project
+    await proj.deleteOne();
+
+    res.json({ ok: true, deletedProject: proj._id, deletedProperties: deletedProps });
+  } catch (e) {
+    console.error("DELETE /projects/:id error:", e);
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// link property (✅ also stamps back-reference on the Property)
+router.post(`/:id(${OID})/link-property/:propertyId(${OID})`, async (req, res) => {
+  const { id, propertyId } = req.params;
+
+  const doc = await Project.findByIdAndUpdate(
+    id,
+    { $addToSet: { properties: propertyId } },
+    { new: true }
+  ).populate("properties");
+
+  if (!doc) return res.status(404).json({ error: "not found" });
+
+  // ensure property knows its project so cascades work
+  await Property.updateOne({ _id: propertyId }, { $set: { project: id } });
+
+  res.json(doc);
+});
+
+/* ----------------------- DOCUMENT UPLOADS (DRIVE) ----------------------- */
+router.post(`/:id(${OID})/documents/upload`, upload.single("file"), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, refNo, date } = req.body;
+    if (!name) return res.status(400).json({ error: "name is required" });
+    if (!req.file) return res.status(400).json({ error: "file is required" });
+
+    console.log("[UPLOAD] Incoming:", {
+      id,
+      name,
+      originalname: req.file?.originalname,
+      mimetype: req.file?.mimetype,
+      size: req.file?.size,
+      tempPath: req.file?.path,
+    });
+
+    const p = await Project.findById(id);
+    if (!p) return res.status(404).json({ error: "not found" });
+
+    let d = findDoc(p.documents, name);
+    if (!d) {
+      d = { name, status: "PENDING" };
+      p.documents.push(d);
+    }
+
+    // upload to Drive
+    const g = await uploadToPersonalDrive(req.file.path, {
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+    });
+
+    // cleanup local temp
+    try {
+      fs.unlinkSync(req.file.path);
+    } catch {}
+
+    d.status = "APPROVED";
+    if (refNo) d.refNo = refNo;
+    if (date) d.date = new Date(date);
+    d.file = {
+      provider: "gdrive",
+      fileId: g.fileId,
+      filename: g.name,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+      uploadedAt: new Date(),
+      url: g.webViewLink, // keep compat with older UI code
+      viewLink: g.webViewLink,
+      downloadLink: g.webContentLink,
+    };
+
+    await p.save();
+    console.log("[UPLOAD] Saved document on project:", { projectId: p._id, name, fileId: g.fileId });
+    res.json({ ok: true, document: d });
+  } catch (e) {
+    console.error("[UPLOAD] Error:", e);
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// remove document file
+router.delete(`/:id(${OID})/documents`, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name } = req.query;
+    if (!name) return res.status(400).json({ error: "name is required" });
+
+    const p = await Project.findById(id);
+    if (!p) return res.status(404).json({ error: "not found" });
+
+    const d = findDoc(p.documents, name);
+    if (!d) return res.status(404).json({ error: "document row not found" });
+
+    d.file = undefined;
+    d.status = "PENDING";
+    await p.save();
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+export default router;

@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Chandrapur Real Estate — Manual Entry</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root { --bg:#0b1020; --card:#111831; --text:#edf2ff; --muted:#9fb3c8; --accent:#5ac8fa; --ok:#3ddc97; --err:#ff6b6b; }
+    body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu; background:var(--bg); color:var(--text); }
+    .wrap { max-width: 960px; margin: 32px auto; padding: 0 16px; }
+    .title { font-weight: 700; font-size: 24px; margin-bottom: 16px; }
+    .card { background: var(--card); padding: 16px; border-radius: 12px; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
+    .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 12px; }
+    .col-6 { grid-column: span 6; } .col-4 { grid-column: span 4; } .col-3 { grid-column: span 3; } .col-12 { grid-column: span 12; }
+    label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 6px; }
+    input, select, textarea { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #24314f; background: #0e1530; color: var(--text); }
+    textarea { min-height: 72px; resize: vertical; }
+    .row { margin-bottom: 10px; }
+    .btns { display:flex; gap:10px; flex-wrap: wrap; }
+    button, .btn { cursor: pointer; border: 0; padding: 10px 14px; border-radius: 10px; font-weight: 600; }
+    .primary { background: var(--accent); color:#001427; }
+    .ghost { background: transparent; border: 1px solid #334a7d; color: var(--text); }
+    .ok { color: var(--ok); } .err { color: var(--err); }
+    .muted { color: var(--muted); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+    .hr { height:1px; background: #24314f; margin: 8px 0 16px; border-radius: 1px; }
+    .mt16 { margin-top: 16px; } .mt8 { margin-top: 8px; }
+    .link { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--accent); }
+    @media (max-width: 720px) { .col-6,.col-4,.col-3 { grid-column: span 12; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="title">Chandrapur Real Estate — Manual Property Entry</div>
+    <div class="card">
+      <form id="propForm">
+        <div class="grid">
+          <div class="col-4">
+            <label>District</label>
+            <input name="district" placeholder="Chandrapur" required />
+          </div>
+          <div class="col-4">
+            <label>Taluka</label>
+            <input name="taluka" placeholder="Rajura" />
+          </div>
+          <div class="col-4">
+            <label>Village</label>
+            <input name="village" placeholder="देवई गोविंदपूर" />
+          </div>
+
+          <div class="col-6">
+            <label>ULPIN</label>
+            <input name="ulpin" placeholder="25461903803" />
+          </div>
+          <div class="col-6">
+            <label>Survey / Gat No.</label>
+            <input name="survey_gat_no" placeholder="107/43/3" />
+          </div>
+
+          <div class="col-3">
+            <label>Area (hectares)</label>
+            <input name="area_hectares" type="number" step="0.0001" />
+          </div>
+          <div class="col-3">
+            <label>Area (acres)</label>
+            <input name="area_acres" type="number" step="0.0001" />
+          </div>
+          <div class="col-3">
+            <label>Area (sq m)</label>
+            <input name="area_sq_m" type="number" step="1" />
+          </div>
+          <div class="col-3">
+            <label>Area (sq ft)</label>
+            <input name="area_sq_ft" type="number" step="1" />
+          </div>
+
+          <div class="col-3">
+            <label>Cultivable (hectares)</label>
+            <input name="cultiv_hectares" type="number" step="0.0001" />
+          </div>
+          <div class="col-3">
+            <label>Cultivable (acres)</label>
+            <input name="cultiv_acres" type="number" step="0.0001" />
+          </div>
+          <div class="col-3">
+            <label>Cultivable (sq m)</label>
+            <input name="cultiv_sq_m" type="number" step="1" />
+          </div>
+          <div class="col-3">
+            <label>Cultivable (sq ft)</label>
+            <input name="cultiv_sq_ft" type="number" step="1" />
+          </div>
+
+          <div class="col-4">
+            <label>Land Use</label>
+            <select name="land_use">
+              <option value="AGRICULTURE">AGRICULTURE</option>
+              <option value="NON_AGRICULTURE">NON_AGRICULTURE</option>
+              <option value="INDUSTRIAL">INDUSTRIAL</option>
+              <option value="RESIDENTIAL">RESIDENTIAL</option>
+              <option value="COMMERCIAL">COMMERCIAL</option>
+            </select>
+          </div>
+          <div class="col-4">
+            <label>Crop Year</label>
+            <input name="year" placeholder="2023-24" />
+          </div>
+          <div class="col-2">
+            <label>Crop Code</label>
+            <input name="crop_code" />
+          </div>
+          <div class="col-2">
+            <label>Crop Name</label>
+            <input name="crop_name" placeholder="Jowar (ज्वारी)" />
+          </div>
+
+          <div class="col-6">
+            <label>Longitude (lng)</label>
+            <input name="lng" type="number" step="0.000001" placeholder="79.3074" />
+          </div>
+          <div class="col-6">
+            <label>Latitude (lat)</label>
+            <input name="lat" type="number" step="0.000001" placeholder="19.9506" />
+          </div>
+
+          <div class="col-12">
+            <label>Notes</label>
+            <textarea name="notes" placeholder="Any special remarks..." ></textarea>
+          </div>
+
+          <div class="col-12">
+            <label><input type="checkbox" name="computeNearby" /> Compute nearby (use loaded POIs)</label>
+          </div>
+
+          <div class="col-12 btns">
+            <button class="primary" type="submit">Save Property</button>
+            <button class="ghost" type="button" id="benefitBtn" disabled>Preview Benefit Card</button>
+            <a class="btn ghost" id="brochureLink" href="#" target="_blank" rel="noopener" aria-disabled="true">Open Brochure PDF</a>
+          </div>
+        </div>
+      </form>
+
+      <div class="hr"></div>
+
+      <div id="status" class="muted">Fill the form and click <b>Save Property</b>.</div>
+      <pre id="output" class="mono mt8"></pre>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById("propForm");
+    const output = document.getElementById("output");
+    const statusEl = document.getElementById("status");
+    const benefitBtn = document.getElementById("benefitBtn");
+    const brochureLink = document.getElementById("brochureLink");
+
+    function num(v) {
+      if (v === "" || v == null) return null;
+      const n = Number(String(v).replace(/,/g, "").trim());
+      return isNaN(n) ? null : n;
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      statusEl.textContent = "Saving...";
+      output.textContent = "";
+
+      const fd = new FormData(form);
+      const payload = {
+        source: { type: "MAHA_7_12" },
+        location_admin: {
+          state: "Maharashtra",
+          district: fd.get("district") || null,
+          taluka: fd.get("taluka") || null,
+          village: fd.get("village") || null
+        },
+        parcel: {
+          ulpin: fd.get("ulpin") || null,
+          survey_gat_no: fd.get("survey_gat_no") || null,
+          area: {
+            hectares: num(fd.get("area_hectares")),
+            acres: num(fd.get("area_acres")),
+            square_meters: num(fd.get("area_sq_m")),
+            square_feet: num(fd.get("area_sq_ft")),
+          },
+          cultivable_area: {
+            hectares: num(fd.get("cultiv_hectares")),
+            acres: num(fd.get("cultiv_acres")),
+            square_meters: num(fd.get("cultiv_sq_m")),
+            square_feet: num(fd.get("cultiv_sq_ft")),
+          }
+        },
+        use_and_crop: {
+          land_use: fd.get("land_use") || "AGRICULTURE",
+          year: fd.get("year") || null,
+          crop_code: fd.get("crop_code") || null,
+          crop_name: fd.get("crop_name") || null
+        },
+        remarks: { notes: fd.get("notes") || null },
+        integration: {
+          district_tag: fd.get("district") || null,
+          taluka_tag: fd.get("taluka") || null,
+          village_tag: fd.get("village") || null,
+          search_tokens: [
+            fd.get("district"),
+            fd.get("taluka"),
+            fd.get("village"),
+            fd.get("ulpin"),
+            fd.get("survey_gat_no"),
+          ].filter(Boolean)
+        }
+      };
+
+      const lng = num(fd.get("lng"));
+      const lat = num(fd.get("lat"));
+      if (isFinite(lng) && isFinite(lat)) {
+        payload.geo = { type: "Point", coordinates: [lng, lat], geo_source: "manual-form" };
+      }
+
+      const computeNearby = fd.get("computeNearby") === "on";
+
+      try {
+        let res = await fetch("/api/properties", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) throw new Error(await res.text());
+        const doc = await res.json();
+
+        // Optional: recompute after create (for accuracy) if requested
+        if (computeNearby && doc?.geo?.coordinates?.length === 2) {
+          const rec = await fetch(`/api/properties/${doc._id}/recompute`, { method: "POST" });
+          if (rec.ok) {
+            const recomputed = await rec.json();
+            Object.assign(doc, recomputed);
+          }
+        }
+
+        statusEl.innerHTML = `<span class="ok">Saved ✓</span>`;
+        output.textContent = JSON.stringify(doc, null, 2);
+
+        // Enable benefit + brochure
+        benefitBtn.disabled = false;
+        benefitBtn.dataset.id = doc._id;
+        brochureLink.href = `/api/properties/${doc._id}/brochure.pdf`;
+        brochureLink.removeAttribute("aria-disabled");
+      } catch (err) {
+        statusEl.innerHTML = `<span class="err">Error</span>`;
+        output.textContent = String(err);
+      }
+    });
+
+    benefitBtn.addEventListener("click", async () => {
+      const id = benefitBtn.dataset.id;
+      if (!id) return;
+      statusEl.textContent = "Generating benefit text...";
+      try {
+        const res = await fetch(`/api/properties/${id}/benefit`);
+        const data = await res.json();
+        statusEl.textContent = "Benefit Card:";
+        output.textContent = JSON.stringify(data, null, 2);
+      } catch (e) {
+        statusEl.innerHTML = `<span class="err">Failed to load benefit</span>`;
+      }
+    });
+  </script>
+</body>
+</html>

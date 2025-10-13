@@ -1,0 +1,70 @@
+{
+  "projectId": "PRJ-1001",
+  "projectName": "DEVI GOVINDPUR RAYATWARI",
+  "projectType": "PLOTTING",
+  "status": "COMPLETED",
+  "bookingStatus": "Possession Given",
+  "launchDate": "2023-12-12",
+  "completionDate": null,
+
+  "locationDetails": {
+    "address": "Tukum Rd, Durgapur, Chandrapur, Maharashtra 442401",
+    "mouza": "DEVAI GOVINDPUR RAYATWARI",
+    "tehsil": "Chandrapur",
+    "district": "Chandrapur",
+    "surveyNo": "107/43",
+    "warg": "1"
+  },
+
+  "plots": [
+    {
+      "plotNo": "1",
+      "area_sqm": 882.5400,
+      "area_sqft": 9498.62,
+      "hr": 0.14,
+      "rate_per_sqft": 864.32,
+      "added_tax": 245000,
+      "occupant_names": ["Pawan Rajendra Saraf"],
+      "aadhaar_numbers": []
+    },
+    {
+      "plotNo": "2",
+      "area_sqm": 874.2500,
+      "area_sqft": 9411.69,
+      "hr": 0.14,
+      "rate_per_sqft": 864.32,
+      "added_tax": 0,
+      "occupant_names": ["Prasad Kishor Jorgewar"],
+      "aadhaar_numbers": []
+    },
+    {
+      "plotNo": "3",
+      "area_sqm": 850.2900,
+      "area_sqft": 9156.86,
+      "hr": 0.13,
+      "rate_per_sqft": 864.32,
+      "added_tax": 0,
+      "occupant_names": [],
+      "aadhaar_numbers": []
+    }
+  ],
+
+  "documents": [
+    { "name": "Official Application letter",                        "status": "APPROVED" },
+    { "name": "Official Permission letter(Approval letter)",        "status": "APPROVED" },
+    { "name": "7/12",                                               "status": "APPROVED" },
+    { "name": "CMC Approval",                                       "status": "APPROVED" },
+    { "name": "Land Survey Map 'ka prat'",                          "status": "APPROVED" },
+    { "name": "Sanctioned Tentative layout map",                    "status": "APPROVED" },
+    { "name": "Sanctioned Demarcated/Final layout map",             "status": "REJECTED" },
+    { "name": "Registry Document",                                  "status": "REJECTED" }
+  ],
+
+  "financials": {
+    "totalAgreementValue": 24500000,
+    "stampDuty": 1470000,
+    "registrationFee": 30000,
+    "totalValue": 26020000,
+    "ratePerSqft": 864.32
+  }
+}

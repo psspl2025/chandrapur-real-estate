@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "PSSPL",
+    "slug": "psspl",
+    "scheme": "psspl",
+    "orientation": "portrait",
+    "jsEngine": "hermes",
+    "experiments": { "typedRoutes": true },
+    "plugins": ["expo-router"],
+    "splash": { "backgroundColor": "#0f172a" },
+    "android": { "package": "com.psspl.mobile", "permissions": [] },
+    "ios": { "supportsTablet": false }
+  }
+}

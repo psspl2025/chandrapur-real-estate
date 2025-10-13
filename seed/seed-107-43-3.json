@@ -1,0 +1,62 @@
+{
+  "source": {
+    "type": "MAHA_7_12",
+    "scan_date": "2023-11-21",
+    "mutation_entry_no": "22469",
+    "mutation_entry_date": "2023-11-08",
+    "file_ref": "PgHtml712"
+  },
+  "location_admin": {
+    "state": "Maharashtra",
+    "district": "Chandrapur",
+    "taluka": "Rajura",
+    "village": "देवई गोविंदपूर"
+  },
+  "parcel": {
+    "ulpin": "25461903803",
+    "survey_gat_no": "107/43/3",
+    "area": {
+      "hectares": 0.41,
+      "acres": 1.0131320621,
+      "square_meters": 4100,
+      "square_feet": 44132.03270850986
+    },
+    "cultivable_area": {
+      "hectares": 0.31,
+      "acres": 0.7660266811,
+      "square_meters": 3100,
+      "square_feet": 33368.12229180014
+    }
+  },
+  "ownership": [
+    { "holder_name": "TBD", "holder_name_marathi": "TBD", "share": "TBD" }
+  ],
+  "use_and_crop": {
+    "land_use": "AGRICULTURE",
+    "year": "2023-24",
+    "crop_code": "4331",
+    "crop_name": "Jowar (ज्वारी)"
+  },
+  "remarks": {
+    "notes": "Auto-parsed from 7/12 scan; verify owner & encumbrances.",
+    "stamp_text": "Talathi signature 21/11/2023"
+  },
+  "geo": {
+    "type": "Point",
+    "coordinates": null,
+    "geo_source": "TBD"
+  },
+  "integration": {
+    "district_tag": "Chandrapur",
+    "taluka_tag": "Rajura",
+    "village_tag": "देवई गोविंदपूर",
+    "search_tokens": [
+      "25461903803",
+      "ULPIN25461903803",
+      "Gat107/43/3",
+      "Chandrapur",
+      "Rajura",
+      "देवई गोविंदपूर"
+    ]
+  }
+}

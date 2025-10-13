@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Chandrapur Real Estate — Bulk Import</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: system-ui,-apple-system,Segoe UI,Roboto; padding: 24px; background:#0b1020; color:#edf2ff; }
+    .card { max-width: 720px; margin:auto; background:#111831; padding:16px; border-radius:12px; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
+    label { display:block; margin: 12px 0 6px; color:#9fb3c8 }
+    input, button { padding:10px 12px; border-radius: 8px; border:1px solid #24314f; background:#0e1530; color:#edf2ff; }
+    .row { margin-bottom: 10px; }
+    button { cursor:pointer; border:0; background:#5ac8fa; color:#001427; font-weight:600 }
+    .muted { color:#9fb3c8 }
+    pre { background:#0e1530; padding:12px; border-radius:8px; overflow:auto }
+    a { color:#5ac8fa }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Bulk Import Properties (Excel/CSV)</h2>
+    <p class="muted">Endpoint: <code>/api/import/properties</code></p>
+
+    <form id="uploadForm">
+      <div class="row">
+        <label>File (.xlsx or .csv)</label>
+        <input type="file" name="file" accept=".xlsx,.csv" required />
+      </div>
+      <div class="row">
+        <label><input type="checkbox" name="computeNearby" /> Compute nearby after import (requires coords & POIs)</label>
+      </div>
+      <button type="submit">Upload & Import</button>
+    </form>
+
+    <h3>Result</h3>
+    <pre id="out"></pre>
+
+    <h3>Expected Columns (case-insensitive)</h3>
+    <pre>
+district, taluka, village
+ulpin, survey_gat_no
+area_hectares, area_acres, area_sq_m, area_sq_ft
+cultiv_hectares, cultiv_acres, cultiv_sq_m, cultiv_sq_ft
+land_use, year, crop_code, crop_name
+lng, lat
+    </pre>
+
+    <p class="muted">Tip: After import, you can list: <code>/api/properties?limit=5</code></p>
+    <p><a href="/">← Back to Manual Entry</a></p>
+  </div>
+
+  <script>
+    const form = document.getElementById("uploadForm");
+    const out = document.getElementById("out");
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      out.textContent = "Uploading...";
+      const fd = new FormData(form);
+      // convert checkbox to string "true"/"false" as API expects
+      fd.set("computeNearby", form.computeNearby.checked ? "true" : "false");
+      try {
+        const res = await fetch("/api/import/properties", { method: "POST", body: fd });
+        const json = await res.json();
+        out.textContent = JSON.stringify(json, null, 2);
+      } catch (err) {
+        out.textContent = String(err);
+      }
+    });
+  </script>
+</body>
+</html>

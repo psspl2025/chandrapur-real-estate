@@ -1,0 +1,146 @@
+[
+  {
+    "name": "NH-353D (Chandrapur–Mul Road)",
+    "poiType": "HIGHWAY",
+    "subType": "NH",
+    "district": "Chandrapur",
+    "meta": { "code": "NH-353D" },
+    "location": { "type": "Point", "coordinates": [79.3350, 19.9400] }
+  },
+  {
+    "name": "NH-930 (Rajura–Ballarpur)",
+    "poiType": "HIGHWAY",
+    "subType": "NH",
+    "district": "Chandrapur",
+    "meta": { "code": "NH-930" },
+    "location": { "type": "Point", "coordinates": [79.3600, 19.9000] }
+  },
+  {
+    "name": "Mul–Chandrapur Major Road",
+    "poiType": "ROAD_MAJOR",
+    "subType": "MajorRoad",
+    "district": "Chandrapur",
+    "meta": {},
+    "location": { "type": "Point", "coordinates": [79.3200, 19.9550] }
+  },
+  {
+    "name": "Devi Govindpur (Village)",
+    "poiType": "VILLAGE",
+    "subType": "Village",
+    "district": "Chandrapur",
+    "meta": {},
+    "location": { "type": "Point", "coordinates": [79.3074, 19.9506] }
+  },
+  {
+    "name": "Rajura (Taluka HQ)",
+    "poiType": "TALUKA_HQ",
+    "subType": "TalukaHQ",
+    "district": "Chandrapur",
+    "meta": {},
+    "location": { "type": "Point", "coordinates": [79.3605, 19.7790] }
+  },
+  {
+    "name": "Chandrapur (District HQ)",
+    "poiType": "DISTRICT_HQ",
+    "subType": "DistrictHQ",
+    "district": "Chandrapur",
+    "meta": {},
+    "location": { "type": "Point", "coordinates": [79.2980, 19.9615] }
+  },
+  {
+    "name": "ZP School Devi Govindpur",
+    "poiType": "SCHOOL",
+    "subType": "Primary",
+    "district": "Chandrapur",
+    "meta": { "grades": "1-7" },
+    "location": { "type": "Point", "coordinates": [79.3090, 19.9515] }
+  },
+  {
+    "name": "Govt High School, Rajura",
+    "poiType": "SCHOOL",
+    "subType": "Secondary",
+    "district": "Chandrapur",
+    "meta": { "grades": "8-10" },
+    "location": { "type": "Point", "coordinates": [79.3620, 19.7840] }
+  },
+  {
+    "name": "Primary Health Centre, Devi Govindpur",
+    "poiType": "HOSPITAL",
+    "subType": "PHC",
+    "district": "Chandrapur",
+    "meta": { "beds": 10 },
+    "location": { "type": "Point", "coordinates": [79.3085, 19.9522] }
+  },
+  {
+    "name": "Civil Hospital, Chandrapur",
+    "poiType": "HOSPITAL",
+    "subType": "Hospital",
+    "district": "Chandrapur",
+    "meta": { "beds": 200 },
+    "location": { "type": "Point", "coordinates": [79.3005, 19.9670] }
+  },
+  {
+    "name": "CSTPS – Chandrapur Super Thermal Power Station",
+    "poiType": "INDUSTRY",
+    "subType": "PowerPlant",
+    "district": "Chandrapur",
+    "meta": { "operator": "Mahagenco" },
+    "location": { "type": "Point", "coordinates": [79.3340, 19.9500] }
+  },
+  {
+    "name": "Jatpura Gate Market",
+    "poiType": "MARKET",
+    "subType": "Market",
+    "district": "Chandrapur",
+    "meta": { "periodicity": "Daily/Weekly" },
+    "location": { "type": "Point", "coordinates": [79.3050, 19.9515] }
+  },
+  {
+    "name": "Erai River Bridge (Chandrapur)",
+    "poiType": "RIVER",
+    "subType": "River",
+    "district": "Chandrapur",
+    "meta": { "river": "Erai" },
+    "location": { "type": "Point", "coordinates": [79.3145, 19.9600] }
+  },
+  {
+    "name": "Wardha River (Near Ballarpur)",
+    "poiType": "RIVER",
+    "subType": "River",
+    "district": "Chandrapur",
+    "meta": { "river": "Wardha" },
+    "location": { "type": "Point", "coordinates": [79.3710, 19.8250] }
+  },
+  {
+    "name": "Chandrapur Railway Station",
+    "poiType": "RAIL_STATION",
+    "subType": "Railway",
+    "district": "Chandrapur",
+    "meta": { "code": "CD" },
+    "location": { "type": "Point", "coordinates": [79.2955, 19.9655] }
+  },
+  {
+    "name": "Babupeth Railway Station",
+    "poiType": "RAIL_STATION",
+    "subType": "Railway",
+    "district": "Chandrapur",
+    "meta": { "code": "BUPH" },
+    "location": { "type": "Point", "coordinates": [79.2700, 19.9760] }
+  },
+  {
+    "name": "Rajura Bus Stand",
+    "poiType": "BUS_STAND",
+    "subType": "MSRTC",
+    "district": "Chandrapur",
+    "meta": {},
+    "location": { "type": "Point", "coordinates": [79.3640, 19.7835] }
+  },
+  {
+    "name": "Chandrapur Main Bus Stand",
+    "poiType": "BUS_STAND",
+    "subType": "MSRTC",
+    "district": "Chandrapur",
+    "meta": {},
+    "location": { "type": "Point", "coordinates": [79.3045, 19.9535] }
+  }
+]

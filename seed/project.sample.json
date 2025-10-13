@@ -1,0 +1,38 @@
+{
+  "projectId": "PRJ-001",
+  "projectName": "DEVI GOVINDPUR RAYATWARI",
+  "projectType": "PLOTTING",
+  "status": "ONGOING",
+  "bookingStatus": "REGISTERED",
+  "launchDate": "2025-09-01",
+  "completionDate": "2026-03-31",
+  "locationDetails": {
+    "address": "Village Devai Govindpur, Chandrapur",
+    "mouza": "Devai Govindpur",
+    "tehsil": "Chandrapur",
+    "district": "Chandrapur",
+    "surveyNo": "107/43/3",
+    "warg": "A"
+  },
+  "plots": [
+    { "plotNo": "P-01", "area_sqm": 125.0, "area_sqft": 1345.0, "hr": 0.012, "rate_per_sqft": 1100, "added_tax": 0, "occupant_names": ["Anil S"], "aadhaar_numbers": ["XXXX-XXXX-1234"] },
+    { "plotNo": "P-02", "area_sqm": 130.0, "area_sqft": 1399.0, "hr": 0.013, "rate_per_sqft": 1100, "added_tax": 0, "occupant_names": ["Meera P"], "aadhaar_numbers": ["XXXX-XXXX-4567"] }
+  ],
+  "documents": [
+    { "name": "Official Application letter", "status": "APPROVED" },
+    { "name": "Official Permission letter(Approval letter)", "status": "APPROVED" },
+    { "name": "7/12", "status": "APPROVED" },
+    { "name": "CMC Approval", "status": "PENDING" },
+    { "name": "Land Survey Map 'ka prat'", "status": "APPROVED" },
+    { "name": "Sanctioned Tentative layout map", "status": "APPROVED" },
+    { "name": "Sanctioned Demarcated/Final layout map", "status": "PENDING" },
+    { "name": "Registry Document", "status": "PENDING" }
+  ],
+  "financials": {
+    "totalAgreementValue": 8500000,
+    "stampDuty": 425000,
+    "registrationFee": 35000,
+    "totalValue": 8965000,
+    "ratePerSqft": 1100
+  }
+}

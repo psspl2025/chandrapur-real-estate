@@ -1,0 +1,40 @@
+// seed/seed-project-devai-govindpur.json
+{
+"projectId": "1001",
+"projectName": "Devai Govindpur Rayatwari",
+"projectType": "PLOTTING",
+"status": "COMPLETED",
+"bookingStatus": "Possession Given",
+"launchDate": "2023-12-12",
+"locationDetails": {
+"address": "Devai Govindpur, Chandrapur",
+"mouza": "Devai Govindpur Rayatwari",
+"tehsil": "Chandrapur",
+"district": "Chandrapur",
+"surveyNo": "107/43",
+"warg": "1"
+},
+"financials": {
+"totalAgreementValue": 24500000,
+"stampDuty": 1470000,
+"registrationFee": 30000,
+"totalValue": 1500000,
+"ratePerSqft": 864.32
+},
+"plots": [
+{ "plotNo": "1", "area_sqm": 882.54, "area_sqft": 9499.51, "hr": 0.14, "rate_per_sqft": 864.32 },
+{ "plotNo": "2", "area_sqm": 874.25, "area_sqft": 9407.74, "hr": 0.14, "rate_per_sqft": 864.32 },
+{ "plotNo": "3", "area_sqm": 850.29, "area_sqft": 9155.13, "hr": 0.13, "rate_per_sqft": 864.32 }
+],
+"documents": [
+{ "name": "Official Application Letter", "status": "APPROVED" },
+{ "name": "Official Permission Letter", "status": "APPROVED" },
+{ "name": "7/12", "status": "APPROVED" },
+{ "name": "CMC Approval", "status": "APPROVED" },
+{ "name": "Land Survey Map 'ka prat'", "status": "APPROVED" },
+{ "name": "Sanctioned Tentative Layout Map", "status": "APPROVED" },
+{ "name": "Sanctioned Demarcated/Final Layout Map", "status": "PENDING" },
+{ "name": "Registry Document", "status": "PENDING" }
+]
+}
+
