@@ -2,45 +2,89 @@ name: Keep Render API Awake
 
 on:
   schedule:
-    - cron: "*/5 * * * *"   # every 5 minutes (UTC)
-  workflow_dispatch:        # allow manual run
+    - cron: "*/5 * * * *"     # every 5 minutes (UTC)
+  workflow_dispatch:          # manual run
 
 permissions:
   contents: read
 
 env:
+  # Add one URL per line
   PING_URLS: |
     https://api.psspl.pawanssiddhi.in/health
+    https://api.psspl.pawanssiddhi.in/api/public/properties?page=1&limit=1
 
 jobs:
   ping:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+
     steps:
       - name: Show target URLs
         run: echo "${{ env.PING_URLS }}"
 
       - name: Curl each URL
+        id: pinger
         shell: bash
         run: |
           set -euo pipefail
           IFS=$'\n'
-          failed=0
+          failed_list=()
           for url in $PING_URLS; do
             echo "→ Pinging: $url"
-            # Do the request, capture HTTP code, retry on transient failures
             code=$(curl -sS -o /dev/null -w "%{http_code}" \
-              --retry 3 --retry-all-errors --max-time 20 "$url") || true
-
+              --retry 3 --retry-all-errors --max-time 20 "$url") || code="000"
             if [[ "$code" =~ ^2[0-9]{2}$ ]]; then
               echo "✓ OK ($code) — $url"
             else
               echo "✗ FAIL ($code) — $url"
-              failed=$((failed+1))
+              failed_list+=("$url ($code)")
             fi
           done
 
-          if [[ $failed -gt 0 ]]; then
-            echo "::error ::$failed URL(s) failed."
+          if [[ ${#failed_list[@]} -gt 0 ]]; then
+            printf "%s\n" "${failed_list[@]}" > failed.txt
+            echo "failed_count=${#failed_list[@]}" >> $GITHUB_OUTPUT
+            echo "failed_urls<<EOF" >> $GITHUB_OUTPUT
+            printf "%s\n" "${failed_list[@]}" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
             exit 1
           fi
+
+      # ---------- Slack alert (optional) ----------
+      # 1) In your repo: Settings → Secrets and variables → Actions → New repository secret
+      # 2) Name: SLACK_WEBHOOK_URL   Value: (your Slack Incoming Webhook URL)
+      - name: Slack alert on failure
+        if: failure() && secrets.SLACK_WEBHOOK_URL != ''
+        env:
+          WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          text="❌ Keep-Alive failed on $GITHUB_REPOSITORY\n\
+          Workflow: $GITHUB_WORKFLOW\n\
+          Run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID\n\
+          Failed URLs (${ { steps.pinger.outputs.failed_count } }):\n${{ steps.pinger.outputs.failed_urls }}"
+          payload=$(jq -n --arg t "$text" '{text: $t}')
+          curl -sS -X POST -H 'Content-type: application/json' --data "$payload" "$WEBHOOK"
+
+      # ---------- Email alert (optional; requires SMTP creds) ----------
+      # To enable:
+      # 1) Add these secrets: SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, MAIL_TO, MAIL_FROM
+      # 2) Uncomment the step below.
+      #
+      # - name: Email alert on failure
+      #   if: failure() && secrets.SMTP_HOST != '' && secrets.MAIL_TO != '' && secrets.MAIL_FROM != ''
+      #   uses: dawidd6/action-send-mail@v3
+      #   with:
+      #     server_address: ${{ secrets.SMTP_HOST }}
+      #     server_port: ${{ secrets.SMTP_PORT }}
+      #     username: ${{ secrets.SMTP_USERNAME }}
+      #     password: ${{ secrets.SMTP_PASSWORD }}
+      #     subject: "❌ Keep-Alive failed: ${{ github.repository }}"
+      #     to: ${{ secrets.MAIL_TO }}
+      #     from: ${{ secrets.MAIL_FROM }}
+      #     body: |
+      #       Repository: ${{ github.repository }}
+      #       Workflow:   ${{ github.workflow }}
+      #       Run:        https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      #       Failed URLs:
+      #       ${{ steps.pinger.outputs.failed_urls }}
