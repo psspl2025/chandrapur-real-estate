@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { DOC_ROWS, Check, removeDoc } from "./common";
 import { API_BASE } from "../../config";
 
@@ -47,6 +47,44 @@ async function makePdf(pages) {
   return new Blob([pdfBytes], { type: "application/pdf" });
 }
 
+/* -------- helpers to detect and open Google auth from an error body -------- */
+function extractGoogleAuthUrl(text) {
+  // catches both /o/oauth2 and /o/oauth2/v2 forms
+  const m = text.match(/https:\/\/accounts\.google\.com\/o\/oauth2[^\s"'<>]+/i);
+  return m ? m[0] : null;
+}
+
+async function handleUploadError(resOrError) {
+  try {
+    // Prefer reading the error body if it's a Response
+    if (resOrError && typeof resOrError.text === "function") {
+      const t = await resOrError.text();
+      const url = extractGoogleAuthUrl(t);
+      if (url) {
+        const go = confirm(
+          "Google Drive is not connected yet.\n\nOpen the Google consent screen now?"
+        );
+        if (go) window.open(url, "_blank", "noopener,noreferrer");
+        throw new Error("Google authorization required");
+      }
+      throw new Error(t || "Upload failed");
+    }
+    // Plain Error
+    const msg = resOrError?.message || "Upload failed";
+    const url = extractGoogleAuthUrl(msg);
+    if (url) {
+      const go = confirm(
+        "Google Drive is not connected yet.\n\nOpen the Google consent screen now?"
+      );
+      if (go) window.open(url, "_blank", "noopener,noreferrer");
+      throw new Error("Google authorization required");
+    }
+    throw resOrError;
+  } catch (e) {
+    throw e;
+  }
+}
+
 export default function ProjectDocuments({
   detail,
   pendingOnly,
@@ -66,6 +104,40 @@ export default function ProjectDocuments({
       ),
     [detail]
   );
+
+  // ---- Google Drive connection status ----
+  const [gConnected, setGConnected] = useState(true); // optimistic
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch(`${API_BASE}/import/gdrive/status`, { credentials: "include" });
+        if (!r.ok) throw new Error();
+        const j = await r.json();
+        setGConnected(!!j?.connected);
+      } catch {
+        // if status route missing, don't block uploads
+        setGConnected(true);
+      }
+    })();
+  }, []);
+
+  const connectGDrive = () => {
+    window.open(`${API_BASE}/import/gdrive/start`, "_blank", "noopener,noreferrer");
+    // Poll status for ~20s to flip the banner automatically after user authorizes
+    let tries = 0;
+    const t = setInterval(async () => {
+      tries++;
+      try {
+        const r = await fetch(`${API_BASE}/import/gdrive/status`, { credentials: "include" });
+        const j = await r.json();
+        if (j?.connected) {
+          clearInterval(t);
+          setGConnected(true);
+        }
+      } catch {}
+      if (tries > 40) clearInterval(t);
+    }, 500);
+  };
 
   // ---- Scan panel state ----
   const [scanLabel, setScanLabel] = useState(null); // which document label is open for scanning
@@ -107,7 +179,6 @@ export default function ProjectDocuments({
       const date = document.getElementById(dateId)?.value || "";
 
       const fd = new FormData();
-      // name the pdf nicely
       const filename = `${label.replace(/\s+/g, "_")}_${new Date()
         .toISOString()
         .slice(0, 10)}.pdf`;
@@ -120,7 +191,9 @@ export default function ProjectDocuments({
         `${API_BASE}/projects/${detail._id}/documents/upload`,
         { method: "POST", body: fd }
       );
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        await handleUploadError(res);
+      }
       await reloadDetail();
       await reloadList();
       closeScan();
@@ -132,6 +205,19 @@ export default function ProjectDocuments({
 
   return (
     <div className="space-y-3">
+      {/* Google Drive banner */}
+      {!gConnected && (
+        <div className="p-2 rounded border border-amber-600 bg-amber-900/20 text-amber-200 text-sm flex items-center justify-between">
+          <span>Google Drive is not connected. Connect once to enable uploads.</span>
+          <button
+            className="px-3 py-1.5 rounded border border-amber-500 hover:bg-amber-800/30"
+            onClick={connectGDrive}
+          >
+            Connect Google Drive
+          </button>
+        </div>
+      )}
+
       <div className="flex items-center gap-3">
         <label className="text-xs">
           <input
@@ -254,8 +340,7 @@ export default function ProjectDocuments({
                                   { method: "POST", body: fd }
                                 );
                                 if (!res.ok) {
-                                  const msg = await res.text();
-                                  throw new Error(msg || "Upload failed");
+                                  await handleUploadError(res);
                                 }
                                 await reloadDetail();
                                 await reloadList();
@@ -269,7 +354,7 @@ export default function ProjectDocuments({
                             }}
                           />
 
-                          {/* New: Scan flow */}
+                          {/* Scan flow */}
                           <button
                             className="px-2 py-1 rounded border border-sky-500 text-sky-300 hover:bg-sky-900/20"
                             onClick={() =>
@@ -364,7 +449,7 @@ export default function ProjectDocuments({
                                   >
                                     <img
                                       src={p.data}
-                                      alt={`p${i + 1}`}
+                                      alt={`p${i + 1}`]
                                       className="w-40 h-56 object-cover block"
                                     />
                                     <button

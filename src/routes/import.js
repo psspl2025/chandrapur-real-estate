@@ -4,8 +4,96 @@ import multer from "multer";
 import xlsx from "xlsx";
 import Property from "../models/Property.js";
 import { recomputeForProperty } from "../services/nearby.js";
+import { google } from "googleapis";
 
 const router = express.Router();
+
+/* ------------------------------------------------------------------ */
+/*                         Google Drive OAuth                          */
+/* ------------------------------------------------------------------ */
+const GID = process.env.GOOGLE_CLIENT_ID || "";
+const GSECRET = process.env.GOOGLE_CLIENT_SECRET || "";
+const GREDIRECT = process.env.GOOGLE_REDIRECT_URI || "";
+const GOOGLE_ENABLED = !!(GID && GSECRET && GREDIRECT);
+
+let oauth2Client = null;
+/** Keep tokens in memory (you can swap this for DB storage later). */
+let driveTokens = null;
+
+if (GOOGLE_ENABLED) {
+  oauth2Client = new google.auth.OAuth2(GID, GSECRET, GREDIRECT);
+  if (driveTokens) oauth2Client.setCredentials(driveTokens);
+}
+
+const DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive.file"];
+
+function ensureGoogleConfigured(res) {
+  if (!GOOGLE_ENABLED) {
+    res
+      .status(400)
+      .json({ error: "[GDRIVE] Missing GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REDIRECT_URI" });
+    return false;
+  }
+  return true;
+}
+
+function getAuthUrl() {
+  return oauth2Client.generateAuthUrl({
+    access_type: "offline",
+    prompt: "consent",
+    scope: DRIVE_SCOPES,
+    redirect_uri: GREDIRECT,
+  });
+}
+
+/** Kick off Google OAuth */
+router.get("/gdrive/start", (req, res) => {
+  if (!ensureGoogleConfigured(res)) return;
+  try {
+    const url = getAuthUrl();
+    return res.redirect(url);
+  } catch (e) {
+    console.error("GDrive start error:", e);
+    return res.status(500).json({ error: "auth_url_failed" });
+  }
+});
+
+/** OAuth callback – exchanges code for tokens and stores refresh token */
+router.get("/gdrive/callback", async (req, res) => {
+  if (!ensureGoogleConfigured(res)) return;
+  try {
+    const code = String(req.query.code || "");
+    if (!code) return res.status(400).send("Missing ?code");
+
+    const { tokens } = await oauth2Client.getToken({ code, redirect_uri: GREDIRECT });
+    driveTokens = tokens;
+    oauth2Client.setCredentials(tokens);
+
+    // Friendly HTML response so a popup can be closed by the user
+    return res.send(
+      `<html><body style="font-family: system-ui; padding: 16px">
+          <h3>Google Drive connected ✅</h3>
+          <p>You can close this tab and return to the app.</p>
+        </body></html>`
+    );
+  } catch (e) {
+    console.error("GDrive callback error:", e);
+    return res.status(500).send("Google auth failed");
+  }
+});
+
+/** Quick status endpoint the UI can poll */
+router.get("/gdrive/status", (_req, res) => {
+  const hasRefresh =
+    !!driveTokens?.refresh_token ||
+    !!oauth2Client?.credentials?.refresh_token ||
+    !!oauth2Client?.credentials?.access_token;
+  res.json({ connected: GOOGLE_ENABLED && hasRefresh });
+});
+
+/* ------------------------------------------------------------------ */
+/*                           File Import (Excel)                       */
+/* ------------------------------------------------------------------ */
 
 // Multer in-memory store (no temp files on disk)
 const upload = multer({ storage: multer.memoryStorage() });
