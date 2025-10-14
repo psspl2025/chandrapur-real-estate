@@ -115,7 +115,7 @@ export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <div className="flex min-h-screen">
+    <div className="app-layout flex min-h-screen">
       {/* Topbar (mobile only) */}
       <header className="md:hidden fixed inset-x-0 top-0 z-40 h-14 bg-slate-900/95 backdrop-blur border-b border-slate-800 flex items-center px-3">
         <button

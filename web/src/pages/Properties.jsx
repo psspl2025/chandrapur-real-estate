@@ -33,7 +33,9 @@ export default function Properties() {
   useEffect(() => {
     let cancelled = false;
     fetchRoleOnce().then((r) => !cancelled && setRole(r));
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // cross-page notify
@@ -50,7 +52,9 @@ export default function Properties() {
     };
     window.addEventListener("storage", onStorage);
     return () => {
-      try { bcRef.current?.close?.(); } catch {}
+      try {
+        bcRef.current?.close?.();
+      } catch {}
       window.removeEventListener("storage", onStorage);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -69,7 +73,9 @@ export default function Properties() {
   const toggleCompact = () => {
     const next = !compact;
     setCompact(next);
-    try { localStorage.setItem("ui:compactList", next ? "1" : "0"); } catch {}
+    try {
+      localStorage.setItem("ui:compactList", next ? "1" : "0");
+    } catch {}
   };
 
   // keep URL in sync
@@ -142,22 +148,32 @@ export default function Properties() {
       setLoading(false);
     }
   }
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [queryString, role]);
+  useEffect(() => {
+    load(); /* eslint-disable-next-line */
+  }, [queryString, role]);
 
   function resetFilters() {
-    setQ(""); setDistrict(""); setTaluka(""); setVillage(""); setPage(1);
+    setQ("");
+    setDistrict("");
+    setTaluka("");
+    setVillage("");
+    setPage(1);
   }
 
   async function handleRecompute(id, hasCoords) {
     if (!canEdit(role)) return;
-    if (!hasCoords) { toast("Add coordinates first"); return; }
+    if (!hasCoords) {
+      toast("Add coordinates first");
+      return;
+    }
     try {
       const res = await fetch(`${API_BASE}/properties/${id}/recompute`, { method: "POST", credentials: "include" });
       if (!res.ok) throw new Error(await res.text());
       toast("Recomputed ✓");
       await load();
     } catch (e) {
-      toast("Recompute failed"); console.error(e);
+      toast("Recompute failed");
+      console.error(e);
     }
   }
 
@@ -175,13 +191,21 @@ export default function Properties() {
     const brochurePrefix = `${API_BASE}/${isPublic ? "public/properties" : "properties"}`;
 
     return (
-      <div className={cls(compact ? "p-3" : "p-4", "bg-slate-800 rounded-lg shadow-[0_0_0_1px_rgba(255,255,255,0.04)] hover:shadow-[0_6px_20px_-6px_rgba(0,0,0,0.6)] transition-shadow")}>
+      <div
+        className={cls(
+          compact ? "p-3" : "p-4",
+          "bg-slate-800 rounded-lg shadow-[0_0_0_1px_rgba(255,255,255,0.04)] hover:shadow-[0_6px_20px_-6px_rgba(0,0,0,0.6)] transition-shadow"
+        )}
+      >
         <div className="flex flex-wrap justify-between gap-3">
+          {/* Left: meta */}
           <div className="min-w-0">
             <div className="font-bold truncate">
               {p.parcel?.survey_gat_no || "-"} {p.parcel?.ulpin ? `– ${p.parcel.ulpin}` : ""}
               {p?.computed?.roadTouch && (
-                <span className="ml-2 text-[11px] px-2 py-0.5 rounded bg-emerald-600/20 text-emerald-300 align-middle border border-emerald-600/30">Road touch</span>
+                <span className="ml-2 text-[11px] px-2 py-0.5 rounded bg-emerald-600/20 text-emerald-300 align-middle border border-emerald-600/30">
+                  Road touch
+                </span>
               )}
             </div>
             <div className="text-[13px] text-slate-300 truncate">
@@ -198,8 +222,13 @@ export default function Properties() {
             </div>
           </div>
 
-          <div className="flex items-start gap-2 shrink-0">
-            <Link to={`/property/${p._id}`} className="px-3 py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-sm" title="Open details">
+          {/* Right: actions (stack to full-width on mobile) */}
+          <div className="flex items-start gap-2 shrink-0 w-full sm:w-auto justify-end sm:justify-start">
+            <Link
+              to={`/property/${p._id}`}
+              className="px-3 py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-sm"
+              title="Open details"
+            >
               View
             </Link>
             <a
@@ -241,9 +270,6 @@ export default function Properties() {
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
   const activeFilters = [q, district, taluka, village].filter(Boolean).length;
-
-  // keyboard helper: clear on Esc
-  const onEscClear = (setter) => (e) => { if (e.key === "Escape") { setter(""); setPage(1); } };
 
   /* ======================= EXPORT (CSV for Excel) ======================= */
   function csvEscape(v) {
@@ -334,7 +360,9 @@ export default function Properties() {
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
       const ts = new Date();
       const pad = (n) => String(n).padStart(2, "0");
-      const name = `properties_${ts.getFullYear()}-${pad(ts.getMonth() + 1)}-${pad(ts.getDate())}_${pad(ts.getHours())}-${pad(ts.getMinutes())}.csv`;
+      const name = `properties_${ts.getFullYear()}-${pad(ts.getMonth() + 1)}-${pad(ts.getDate())}_${pad(
+        ts.getHours()
+      )}-${pad(ts.getMinutes())}.csv`;
 
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -354,7 +382,7 @@ export default function Properties() {
     }
   }
 
-   /* ======================= RENDER ======================= */
+  /* ======================= RENDER ======================= */
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -384,15 +412,26 @@ export default function Properties() {
             className="w-full p-2 pr-9 rounded bg-slate-900 outline-none focus:ring-2 focus:ring-sky-600/40"
             placeholder="Search…"
             value={q}
-            onChange={(e) => { setQ(e.target.value); setPage(1); }}
-            onKeyDown={(e) => { if (e.key === "Escape") { setQ(""); setPage(1); } }}
+            onChange={(e) => {
+              setQ(e.target.value);
+              setPage(1);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                setQ("");
+                setPage(1);
+              }
+            }}
             aria-label="Search properties"
           />
           {q && (
             <button
               className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
               title="Clear"
-              onClick={() => { setQ(""); setPage(1); }}
+              onClick={() => {
+                setQ("");
+                setPage(1);
+              }}
             >
               ×
             </button>
@@ -403,24 +442,48 @@ export default function Properties() {
           className="md:col-span-3 p-2 rounded bg-slate-900 outline-none focus:ring-2 focus:ring-sky-600/40"
           placeholder="District"
           value={district}
-          onChange={(e) => { setDistrict(e.target.value); setPage(1); }}
-          onKeyDown={(e) => { if (e.key === "Escape") { setDistrict(""); setPage(1); } }}
+          onChange={(e) => {
+            setDistrict(e.target.value);
+            setPage(1);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              setDistrict("");
+              setPage(1);
+            }
+          }}
           aria-label="Filter by district"
         />
         <input
           className="md:col-span-3 p-2 rounded bg-slate-900 outline-none focus:ring-2 focus:ring-sky-600/40"
           placeholder="Taluka"
           value={taluka}
-          onChange={(e) => { setTaluka(e.target.value); setPage(1); }}
-          onKeyDown={(e) => { if (e.key === "Escape") { setTaluka(""); setPage(1); } }}
+          onChange={(e) => {
+            setTaluka(e.target.value);
+            setPage(1);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              setTaluka("");
+              setPage(1);
+            }
+          }}
           aria-label="Filter by taluka"
         />
         <input
           className="md:col-span-3 p-2 rounded bg-slate-900 outline-none focus:ring-2 focus:ring-sky-600/40"
           placeholder="Village"
           value={village}
-          onChange={(e) => { setVillage(e.target.value); setPage(1); }}
-          onKeyDown={(e) => { if (e.key === "Escape") { setVillage(""); setPage(1); } }}
+          onChange={(e) => {
+            setVillage(e.target.value);
+            setPage(1);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              setVillage("");
+              setPage(1);
+            }
+          }}
           aria-label="Filter by village"
         />
 
@@ -459,20 +522,32 @@ export default function Properties() {
           )}
 
           <div className="md:ml-auto flex items-center gap-2 text-sm w-full md:w-auto">
-            <span className="text-slate-400" title="Rows per page">Rows</span>
+            <span className="text-slate-400" title="Rows per page">
+              Rows
+            </span>
             <select
               value={limit}
-              onChange={(e) => { setLimit(Number(e.target.value)); setPage(1); }}
+              onChange={(e) => {
+                setLimit(Number(e.target.value));
+                setPage(1);
+              }}
               className="bg-slate-900 p-1 rounded outline-none focus:ring-2 focus:ring-sky-600/40"
               aria-label="Rows per page"
             >
-              {[10, 20, 50].map((n) => (<option key={n} value={n}>{n}</option>))}
+              {[10, 20, 50].map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
             </select>
-            <div className="flex gap-2 ml-auto md:ml-0">
+            <div className="flex gap-2 ml-auto md:ml-0 w-full md:w-auto">
               <button
                 disabled={page <= 1}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
-                className={cls("px-2 py-1 rounded w-full md:w-auto", page <= 1 ? "bg-slate-700/40 cursor-not-allowed" : "bg-slate-700 hover:bg-slate-600")}
+                className={cls(
+                  "px-2 py-1 rounded w-full md:w-auto",
+                  page <= 1 ? "bg-slate-700/40 cursor-not-allowed" : "bg-slate-700 hover:bg-slate-600"
+                )}
                 title="Previous page"
               >
                 Prev
@@ -483,7 +558,10 @@ export default function Properties() {
               <button
                 disabled={page >= totalPages}
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                className={cls("px-2 py-1 rounded w-full md:w-auto", page >= totalPages ? "bg-slate-700/40 cursor-not-allowed" : "bg-slate-700 hover:bg-slate-600")}
+                className={cls(
+                  "px-2 py-1 rounded w-full md:w-auto",
+                  page >= totalPages ? "bg-slate-700/40 cursor-not-allowed" : "bg-slate-700 hover:bg-slate-600"
+                )}
                 title="Next page"
               >
                 Next
@@ -493,14 +571,16 @@ export default function Properties() {
         </div>
       </div>
 
-
       {err && <div className="mb-2 text-rose-400 text-sm">Error: {err}</div>}
       <div className="mb-2 text-sm text-slate-400">{loading ? "Loading…" : `Showing ${items.length} of ${total}`}</div>
 
       <div className="space-y-3">
         {loading && items.length === 0
           ? Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className={cls(compact ? "p-3" : "p-4", "bg-slate-800 rounded-lg animate-pulse")}>
+              <div
+                key={i}
+                className={cls(compact ? "p-3" : "p-4", "bg-slate-800 rounded-lg animate-pulse")}
+              >
                 <div className="h-4 w-1/3 bg-slate-700 rounded mb-2" />
                 <div className="h-3 w-1/2 bg-slate-700 rounded mb-2" />
                 <div className="h-3 w-1/4 bg-slate-700 rounded" />
@@ -533,13 +613,18 @@ function GeoEditorModal({ property, onClose, onSaved }) {
   const [err, setErr] = useState("");
 
   function valid(lngV, latV) {
-    const L1 = Number(lngV), L2 = Number(latV);
+    const L1 = Number(lngV),
+      L2 = Number(latV);
     return Number.isFinite(L1) && Number.isFinite(L2) && L1 >= -180 && L1 <= 180 && L2 >= -90 && L2 <= 90;
   }
 
   async function save(recompute = true) {
-    if (!valid(lng, lat)) { setErr("Enter valid [lng, lat]"); return; }
-    setSaving(true); setErr("");
+    if (!valid(lng, lat)) {
+      setErr("Enter valid [lng, lat]");
+      return;
+    }
+    setSaving(true);
+    setErr("");
     try {
       const body = { geo: { type: "Point", coordinates: [Number(lng), Number(lat)], geo_source: "properties-edit" } };
       const res = await fetch(`${API_BASE}/properties/${property._id}`, {
@@ -552,7 +637,10 @@ function GeoEditorModal({ property, onClose, onSaved }) {
       let updated = await res.json();
 
       if (recompute) {
-        const rec = await fetch(`${API_BASE}/properties/${property._id}/recompute`, { method: "POST", credentials: "include" });
+        const rec = await fetch(`${API_BASE}/properties/${property._id}/recompute`, {
+          method: "POST",
+          credentials: "include",
+        });
         if (rec.ok) updated = await rec.json();
       }
 
@@ -595,7 +683,9 @@ function GeoEditorModal({ property, onClose, onSaved }) {
         {err && <div className="text-rose-400 text-xs mb-2">{err}</div>}
 
         <div className="flex gap-2 justify-end">
-          <button className="px-3 py-2 rounded bg-slate-700" onClick={onClose} disabled={saving}>Cancel</button>
+          <button className="px-3 py-2 rounded bg-slate-700" onClick={onClose} disabled={saving}>
+            Cancel
+          </button>
           <button className="px-3 py-2 rounded bg-sky-600 hover:bg-sky-500" onClick={() => save(false)} disabled={saving}>
             {saving ? "Saving…" : "Save"}
           </button>
