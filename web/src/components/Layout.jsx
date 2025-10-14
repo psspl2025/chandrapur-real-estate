@@ -77,7 +77,7 @@ function Sidebar({ onNavigate }) {
         </div>
       </div>
 
-      {/* Navigation */}
+      {/* Nav */}
       <nav className="space-y-1">
         <LinkItem to="/" label="Properties" onClick={onNavigate} />
 
@@ -115,8 +115,8 @@ export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <div className="app-layout flex min-h-screen">
-      {/* Topbar (mobile only) */}
+    <div className="flex min-h-screen bg-slate-900 text-slate-100">
+      {/* Mobile topbar */}
       <header className="md:hidden fixed inset-x-0 top-0 z-40 h-14 bg-slate-900/95 backdrop-blur border-b border-slate-800 flex items-center px-3">
         <button
           aria-label="Open menu"
@@ -136,10 +136,7 @@ export default function Layout() {
       {/* Mobile drawer */}
       {mobileOpen && (
         <div className="md:hidden fixed inset-0 z-50">
-          <div
-            className="absolute inset-0 bg-black/50"
-            onClick={() => setMobileOpen(false)}
-          />
+          <div className="absolute inset-0 bg-black/50" onClick={() => setMobileOpen(false)} />
           <div className="absolute left-0 top-0 h-full w-72 bg-slate-900 border-r border-slate-800 shadow-xl">
             <Sidebar onNavigate={() => setMobileOpen(false)} />
           </div>

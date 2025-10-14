@@ -2,10 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Dark app defaults */
 :root { color-scheme: dark; }
 html, body, #root { height: 100%; }
 body { @apply bg-slate-900 text-slate-100; }
-
-/* IMPORTANT: remove Vite demo constraints that break mobile */
 #root { max-width: none; margin: 0; padding: 0; text-align: left; }

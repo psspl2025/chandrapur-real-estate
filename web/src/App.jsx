@@ -1,3 +1,4 @@
+// web/src/App.jsx
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import React, { createContext, useContext, useEffect, useState } from "react";
 

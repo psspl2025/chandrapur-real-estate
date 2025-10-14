@@ -1,3 +1,4 @@
+// web/src/pages/Projects.jsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { API_BASE } from "../config";
 import { useSearchParams } from "react-router-dom";
