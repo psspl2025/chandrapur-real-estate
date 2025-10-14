@@ -1,3 +1,4 @@
+// web/src/pages/Properties.jsx
 import { useEffect, useMemo, useRef, useState, memo } from "react";
 import { API_BASE } from "../config";
 import { Link, useSearchParams } from "react-router-dom";
@@ -353,7 +354,7 @@ export default function Properties() {
     }
   }
 
-  /* ======================= RENDER ======================= */
+   /* ======================= RENDER ======================= */
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -375,10 +376,10 @@ export default function Properties() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="bg-slate-800 p-3 rounded mb-4 grid grid-cols-12 gap-2">
+      {/* Filters (mobile-first) */}
+      <div className="bg-slate-800 p-3 rounded mb-4 grid grid-cols-1 md:grid-cols-12 gap-2">
         {/* Search */}
-        <div className="col-span-3 relative">
+        <div className="md:col-span-3 relative">
           <input
             className="w-full p-2 pr-9 rounded bg-slate-900 outline-none focus:ring-2 focus:ring-sky-600/40"
             placeholder="Search…"
@@ -399,7 +400,7 @@ export default function Properties() {
         </div>
 
         <input
-          className="col-span-3 p-2 rounded bg-slate-900 outline-none focus:ring-2 focus:ring-sky-600/40"
+          className="md:col-span-3 p-2 rounded bg-slate-900 outline-none focus:ring-2 focus:ring-sky-600/40"
           placeholder="District"
           value={district}
           onChange={(e) => { setDistrict(e.target.value); setPage(1); }}
@@ -407,7 +408,7 @@ export default function Properties() {
           aria-label="Filter by district"
         />
         <input
-          className="col-span-3 p-2 rounded bg-slate-900 outline-none focus:ring-2 focus:ring-sky-600/40"
+          className="md:col-span-3 p-2 rounded bg-slate-900 outline-none focus:ring-2 focus:ring-sky-600/40"
           placeholder="Taluka"
           value={taluka}
           onChange={(e) => { setTaluka(e.target.value); setPage(1); }}
@@ -415,7 +416,7 @@ export default function Properties() {
           aria-label="Filter by taluka"
         />
         <input
-          className="col-span-3 p-2 rounded bg-slate-900 outline-none focus:ring-2 focus:ring-sky-600/40"
+          className="md:col-span-3 p-2 rounded bg-slate-900 outline-none focus:ring-2 focus:ring-sky-600/40"
           placeholder="Village"
           value={village}
           onChange={(e) => { setVillage(e.target.value); setPage(1); }}
@@ -423,11 +424,19 @@ export default function Properties() {
           aria-label="Filter by village"
         />
 
-        <div className="col-span-12 flex items-center gap-2">
-          <button onClick={resetFilters} className="px-3 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-sm" title="Clear all filters">
+        <div className="md:col-span-12 flex flex-wrap items-center gap-2">
+          <button
+            onClick={resetFilters}
+            className="px-3 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-sm w-full md:w-auto"
+            title="Clear all filters"
+          >
             Clear
           </button>
-          <button onClick={load} className="px-3 py-1.5 rounded border border-slate-600 hover:bg-slate-700 text-sm" title="Refresh">
+          <button
+            onClick={load}
+            className="px-3 py-1.5 rounded border border-slate-600 hover:bg-slate-700 text-sm w-full md:w-auto"
+            title="Refresh"
+          >
             Refresh
           </button>
 
@@ -435,7 +444,7 @@ export default function Properties() {
             onClick={exportCSV}
             disabled={exporting}
             className={cls(
-              "px-3 py-1.5 rounded text-sm",
+              "px-3 py-1.5 rounded text-sm w-full md:w-auto",
               exporting ? "bg-slate-700 cursor-wait" : "bg-emerald-700 hover:bg-emerald-600"
             )}
             title="Download all rows as CSV (opens in Excel)"
@@ -444,12 +453,12 @@ export default function Properties() {
           </button>
 
           {activeFilters > 0 && (
-            <span className="text-[11px] ml-2 px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-300" title="Active filters">
+            <span className="text-[11px] px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-300">
               Filters • {activeFilters}
             </span>
           )}
 
-          <div className="ml-auto flex items-center gap-2 text-sm">
+          <div className="md:ml-auto flex items-center gap-2 text-sm w-full md:w-auto">
             <span className="text-slate-400" title="Rows per page">Rows</span>
             <select
               value={limit}
@@ -459,28 +468,31 @@ export default function Properties() {
             >
               {[10, 20, 50].map((n) => (<option key={n} value={n}>{n}</option>))}
             </select>
-            <button
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className={cls("px-2 py-1 rounded", page <= 1 ? "bg-slate-700/40 cursor-not-allowed" : "bg-slate-700 hover:bg-slate-600")}
-              title="Previous page"
-            >
-              Prev
-            </button>
-            <span className="text-slate-300" aria-live="polite">
-              {page} / {totalPages}
-            </span>
-            <button
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              className={cls("px-2 py-1 rounded", page >= totalPages ? "bg-slate-700/40 cursor-not-allowed" : "bg-slate-700 hover:bg-slate-600")}
-              title="Next page"
-            >
-              Next
-            </button>
+            <div className="flex gap-2 ml-auto md:ml-0">
+              <button
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className={cls("px-2 py-1 rounded w-full md:w-auto", page <= 1 ? "bg-slate-700/40 cursor-not-allowed" : "bg-slate-700 hover:bg-slate-600")}
+                title="Previous page"
+              >
+                Prev
+              </button>
+              <span className="text-slate-300 self-center">
+                {page} / {totalPages}
+              </span>
+              <button
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className={cls("px-2 py-1 rounded w-full md:w-auto", page >= totalPages ? "bg-slate-700/40 cursor-not-allowed" : "bg-slate-700 hover:bg-slate-600")}
+                title="Next page"
+              >
+                Next
+              </button>
+            </div>
           </div>
         </div>
       </div>
+
 
       {err && <div className="mb-2 text-rose-400 text-sm">Error: {err}</div>}
       <div className="mb-2 text-sm text-slate-400">{loading ? "Loading…" : `Showing ${items.length} of ${total}`}</div>
