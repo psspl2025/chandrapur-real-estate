@@ -6,8 +6,7 @@ import User from "../models/User.js";
 const router = express.Router();
 
 /* ========= Config ========= */
-const JWT_SECRET     = process.env.JWT_SECRET || "dev-secret";
-const COOKIE_NAME    = process.env.COOKIE_NAME || "access_token"; // must match middleware/attachUser
+const JWT_SECRET     = process.env.JWT_SECRET || "dev-secret";const COOKIE_NAME    = process.env.COOKIE_NAME || "access"; // must match middleware/attachUser
 const COOKIE_DOMAIN  = process.env.COOKIE_DOMAIN || undefined;    // undefined on localhost
 const COOKIE_SECURE  = String(process.env.COOKIE_SECURE || "").toLowerCase() === "true";
 const SAME_SITE      = COOKIE_SECURE ? "none" : "lax";            // cross-site when secure
