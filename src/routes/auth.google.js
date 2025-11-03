@@ -1,58 +1,135 @@
+import express from "express";
 import mongoose from "mongoose";
-import bcrypt from "bcryptjs";
-import isEmail from "validator/lib/isEmail.js";
+import User from "../models/User.js";
 
-const UserSchema = new mongoose.Schema(
-  {
-    name: { type: String, trim: true, default: "" },
+const router = express.Router();
 
-    email: {
-      type: String,
-      unique: true,
-      required: true,
-      lowercase: true,
-      trim: true,
-      validate: { validator: isEmail, message: "Invalid email" },
-      index: true,
-    },
+const {
+  GOOGLE_CLIENT_ID,
+  GOOGLE_CLIENT_SECRET,
+  GOOGLE_REDIRECT_URI,
+  WEB_AFTER_LOGIN,
+} = process.env;
 
-    role: { type: String, enum: ["CLIENT", "EDITOR", "ADMIN"], default: "CLIENT", index: true },
-    passwordHash: { type: String, default: null },
-    status: { type: String, enum: ["ACTIVE", "DISABLED"], default: "ACTIVE", index: true },
+const APP_HOME = WEB_AFTER_LOGIN || "https://psspl.pawanssiddhi.in/";
 
-    // 🔒 require password change on next login (for temp/default pw)
-    forcePwChange: { type: Boolean, default: false },
-
-    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-
-    // ✅ Google Drive tokens (persisted after OAuth callback)
-    gdrive: {
-      access_token: { type: String, default: null },
-      refresh_token: { type: String, default: null },
-      scope: { type: String, default: null },
-      token_type: { type: String, default: null },
-      expiry_date: { type: Number, default: null }, // ms epoch
-    },
-  },
-  {
-    timestamps: true,
-    toJSON: {
-      transform(_doc, ret) {
-        delete ret.passwordHash;
-        return ret;
-      },
-    },
+// Ensure env is present
+const needConfig = (_req, res, next) => {
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REDIRECT_URI) {
+    return res.status(500).json({ error: "google_oauth_not_configured" });
   }
-);
-
-UserSchema.methods.setPassword = async function (raw) {
-  if (typeof raw !== "string" || raw.length < 8) throw new Error("password too short");
-  this.passwordHash = await bcrypt.hash(String(raw), 10);
+  next();
 };
 
-UserSchema.methods.checkPassword = async function (raw) {
-  if (!this.passwordHash) return false;
-  return bcrypt.compare(String(raw || ""), String(this.passwordHash));
-};
+// Sanity check
+router.get("/ping", (_req, res) => res.json({ ok: true }));
 
-export default mongoose.models.User || mongoose.model("User", UserSchema);
+// Connection status for the logged-in user
+router.get("/status", (req, res) => {
+  const g = req.user?.gdrive;
+  res.json({
+    connected: !!(g?.access_token || g?.refresh_token),
+    has_refresh: !!g?.refresh_token,
+    expires_in_s: g?.expiry_date
+      ? Math.max(0, Math.floor((g.expiry_date - Date.now()) / 1000))
+      : null,
+  });
+});
+
+// Kick off Google OAuth: send current user id in `state`
+router.get("/login", needConfig, (req, res) => {
+  const uid = req.user?._id;
+  if (!uid) return res.status(401).json({ error: "login_required" });
+
+  const params = new URLSearchParams({
+    client_id: GOOGLE_CLIENT_ID,
+    redirect_uri: GOOGLE_REDIRECT_URI,
+    response_type: "code",
+    scope: "https://www.googleapis.com/auth/drive.file",
+    access_type: "offline",
+    include_granted_scopes: "true",
+    prompt: "consent",
+    state: String(uid),
+  });
+
+  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
+});
+
+// Helper: fetch with timeout
+async function postFormWithTimeout(url, form, ms = 12000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: form.toString(),
+      signal: ctrl.signal,
+    });
+    return resp;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+// Handle callback: use req.user OR fallback to `state`
+router.get("/callback", needConfig, async (req, res) => {
+  try {
+    const code = String(req.query.code || "");
+    const state = String(req.query.state || "");
+    if (!code) return res.redirect(APP_HOME + "?gdrive_error=missing_code");
+
+    // Prefer req.user first; otherwise fall back to state
+    let userId = req.user?._id ? String(req.user._id) : state;
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+      return res.redirect(APP_HOME + "?gdrive_error=not_logged_in");
+    }
+
+    // Exchange code → tokens
+    const form = new URLSearchParams({
+      code,
+      client_id: GOOGLE_CLIENT_ID,
+      client_secret: GOOGLE_CLIENT_SECRET,
+      redirect_uri: GOOGLE_REDIRECT_URI,
+      grant_type: "authorization_code",
+    });
+
+    const tokenResp = await postFormWithTimeout(
+      "https://oauth2.googleapis.com/token",
+      form,
+      15000
+    );
+
+    const tokens = await tokenResp.json();
+    if (!tokenResp.ok) {
+      const reason = encodeURIComponent(tokens?.error || "token_exchange_failed");
+      return res.redirect(`${APP_HOME}?gdrive_error=${reason}`);
+    }
+
+    // Persist tokens for that user
+    await User.findByIdAndUpdate(
+      userId,
+      {
+        $set: {
+          gdrive: {
+            access_token: tokens.access_token || null,
+            refresh_token: tokens.refresh_token || null, // may be null on subsequent consents
+            scope: tokens.scope || null,
+            token_type: tokens.token_type || null,
+            expiry_date: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : null,
+          },
+        },
+      },
+      { strict: false }
+    ).exec();
+
+    // Done → back to app
+    return res.redirect(APP_HOME + "?gdrive=connected");
+  } catch (e) {
+    const msg = encodeURIComponent(String(e?.message || e));
+    return res.redirect(`${APP_HOME}?gdrive_error=${msg}`);
+  }
+});
+
+export default router;
