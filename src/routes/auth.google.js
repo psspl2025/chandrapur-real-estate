@@ -1,3 +1,4 @@
+// src/routes/auth.google.js
 import express from "express";
 import mongoose from "mongoose";
 import User from "../models/User.js";
@@ -23,25 +24,6 @@ const needConfig = (_req, res, next) => {
   next();
 };
 
-// Start OAuth: send state=<userId>
-router.get("/login", needConfig, (req, res) => {
-  const uid = req.user?._id;
-  if (!uid) return res.status(401).json({ error: "login_required" });
-
-  const params = new URLSearchParams({
-    client_id: GOOGLE_CLIENT_ID,
-    redirect_uri: GOOGLE_REDIRECT_URI,
-    response_type: "code",
-    scope: "https://www.googleapis.com/auth/drive.file",
-    access_type: "offline",
-    include_granted_scopes: "true",
-    prompt: "consent",
-    state: String(uid),
-  });
-
-  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
-});
-
 // tiny helper
 async function postFormWithTimeout(url, form, ms = 15000) {
   const ctrl = new AbortController();
@@ -59,6 +41,39 @@ async function postFormWithTimeout(url, form, ms = 15000) {
   }
 }
 
+// middleware to stop caching
+router.use((_req, res, next) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
+  next();
+});
+
+// Start OAuth: send state=<userId>
+router.get("/login", needConfig, (req, res) => {
+  // ✅ prefer uid/id; fallback to _id
+  const cookieUid = req.user?.uid || req.user?.id || req.user?._id;
+  const queryFallback = (req.query.uid || req.query.state || "").toString();
+  const uid = cookieUid ? String(cookieUid) : queryFallback;
+
+  if (!uid || !mongoose.Types.ObjectId.isValid(uid)) {
+    return res.status(401).json({ error: "login_required" });
+  }
+
+  const params = new URLSearchParams({
+    client_id: GOOGLE_CLIENT_ID,
+    redirect_uri: GOOGLE_REDIRECT_URI,
+    response_type: "code",
+    scope: "https://www.googleapis.com/auth/drive.file",
+    access_type: "offline",
+    include_granted_scopes: "true",
+    prompt: "consent",
+    state: String(uid),
+  });
+
+  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
+});
+
 // Callback: persist tokens to user.gdrive
 router.get("/callback", needConfig, async (req, res) => {
   try {
@@ -66,8 +81,10 @@ router.get("/callback", needConfig, async (req, res) => {
     const state = String(req.query.state || "");
     if (!code) return res.redirect(APP_HOME + "?gdrive_error=missing_code");
 
-    // prefer cookie user; else use state
-    let userId = req.user?._id ? String(req.user._id) : state;
+    // ✅ prefer cookie user; else use Google state
+    const cookieUid = req.user?.uid || req.user?.id || req.user?._id || "";
+    let userId = cookieUid ? String(cookieUid) : state;
+
     if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
       return res.redirect(APP_HOME + "?gdrive_error=not_logged_in");
     }
