@@ -1,62 +1,65 @@
-// src/middleware/auth.js
 import jwt from "jsonwebtoken";
 
 /** ===== Config ===== */
 const {
   JWT_SECRET = "change-me",
-  COOKIE_DOMAIN = ".pawanssiddhi.in", // allow cross-subdomain cookies
-  COOKIE_SECURE = "true",             // true on HTTPS (prod)
   NODE_ENV = "development",
-  COOKIE_NAME: ENV_COOKIE_NAME,       // prefer env if provided
+  COOKIE_NAME: ENV_COOKIE_NAME,
+  COOKIE_DOMAIN = ".pawanssiddhi.in",
+  COOKIE_SECURE = "true",
   MASTER_ADMIN_EMAIL = "",
 } = process.env;
 
-const COOKIE_NAME = ENV_COOKIE_NAME || "access"; // align with your .env
+const COOKIE_NAME = ENV_COOKIE_NAME || "access"; // align with .env
 const isProd = NODE_ENV === "production";
 const secureFlag = String(COOKIE_SECURE).toLowerCase() === "true";
 
 /** ================== Cookie Options ================== */
-function cookieOptions() {
+function cookieOpts() {
   return {
     httpOnly: true,
     path: "/",
-    secure: isProd && secureFlag,               // secure cookie in prod
-    sameSite: isProd ? "none" : "lax",          // cross-subdomain in prod
-    domain: isProd ? COOKIE_DOMAIN : undefined, // omit for localhost/dev
-    maxAge: 30 * 24 * 60 * 60 * 1000,           // 30 days
+    // Required for cross-subdomain auth when frontend is a different origin
+    sameSite: isProd ? "none" : "lax",
+    // Secure is mandatory when SameSite=None
+    secure: isProd ? true : secureFlag,
+    // Set domain in prod so api.psspl.* cookie is sent to psspl.*
+    domain: isProd ? COOKIE_DOMAIN : undefined,
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7d
   };
 }
 
 /** ================== JWT Helpers ================== */
-function signToken(payload, expiresIn = "30d") {
+function signToken(payload, expiresIn = "7d") {
   if (!JWT_SECRET) throw new Error("JWT_SECRET not configured");
   return jwt.sign(payload, JWT_SECRET, { expiresIn });
 }
 
 /** Build consistent claims */
 export function buildClaims({ id, _id, email, role, roles, ...rest }) {
-  const uid = String(id || _id || rest.uid || rest.sub || rest.id || "");
+  const uid =
+    String(id || _id || rest.uid || rest.sub || rest.id || "").trim() || null;
   const primaryRole = role || (Array.isArray(roles) && roles[0]) || "PUBLIC";
   const roleList = Array.isArray(roles) ? roles : primaryRole ? [primaryRole] : [];
   return {
     ...rest,
     sub: email || rest.sub || null,
     email: email || rest.email || null,
-    uid: uid || null,
+    uid,
     role: primaryRole,
     roles: roleList,
   };
 }
 
-export function signAccessCookie(res, userPayload, expiresIn = "30d") {
+export function signAccessCookie(res, userPayload, expiresIn = "7d") {
   const claims = buildClaims(userPayload);
   const token = signToken(claims, expiresIn);
-  res.cookie(COOKIE_NAME, token, cookieOptions());
+  res.cookie(COOKIE_NAME, token, cookieOpts());
   return token;
 }
 
 export function clearAccessCookie(res) {
-  res.clearCookie(COOKIE_NAME, { ...cookieOptions(), maxAge: 0 });
+  res.clearCookie(COOKIE_NAME, { ...cookieOpts(), maxAge: 0 });
 }
 
 /** ================== Middleware ================== */
@@ -68,15 +71,17 @@ export function attachUser(req, _res, next) {
     const decoded = jwt.verify(raw, JWT_SECRET);
 
     // Normalize uid/email/roles
-    const uid = String(decoded.uid || decoded.sub || decoded.id || decoded._id || "");
+    const uid =
+      String(decoded.uid || decoded.sub || decoded.id || decoded._id || "")
+        .trim() || null;
     const role = decoded.role || "PUBLIC";
     const roles = Array.isArray(decoded.roles) ? decoded.roles : role ? [role] : [];
-    const email = (decoded.email || decoded.sub || null) ?? null;
+    const email = decoded.email || decoded.sub || null;
 
     req.user = {
       ...decoded,
-      uid: uid || null,
-      id: uid || null, // compatibility for code that reads req.user.id
+      uid,
+      id: uid, // compatibility for any code reading req.user.id
       role,
       roles,
       email,
@@ -85,7 +90,7 @@ export function attachUser(req, _res, next) {
         String(email || "").toLowerCase() === String(MASTER_ADMIN_EMAIL).toLowerCase(),
     };
   } catch {
-    // Silently ignore invalid/expired token; treat as anonymous
+    // Invalid/expired tokens fall through as anonymous
   }
   next();
 }
@@ -110,8 +115,8 @@ export function requireRole(...allowed) {
 
 export function requireMaster(req, res, next) {
   if (!req.user?.uid) return res.status(401).json({ error: "auth required" });
-  const master = String(MASTER_ADMIN_EMAIL || "").toLowerCase();
   const email = String(req.user.email || "").toLowerCase();
+  const master = String(MASTER_ADMIN_EMAIL || "").toLowerCase();
   if (master && email === master) return next();
   return res.status(403).json({ error: "forbidden" });
 }

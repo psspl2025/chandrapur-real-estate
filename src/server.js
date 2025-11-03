@@ -1,5 +1,3 @@
-// src/server.js
-
 // ✅ Load env FIRST so routes see the vars at import-time
 import "dotenv/config";
 
@@ -32,26 +30,22 @@ import importRouter from "./routes/import.js";
 const app = express();
 
 /* ------------------------- CORS & basics ------------------------- */
-// If you want cookies (JWT) to work, you MUST set explicit origins (not "*")
 const DEFAULT_ORIGIN = "http://localhost:5173";
 const allowOrigins = (process.env.CORS_ORIGIN || DEFAULT_ORIGIN)
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
 
-// Allow listed origins + credentialed requests (cookies)
 const corsOptions = {
   origin(origin, cb) {
-    // allow REST tools / same-origin calls (no Origin header) and whitelisted origins
     if (!origin || allowOrigins.includes(origin)) return cb(null, true);
     return cb(new Error(`CORS blocked for origin: ${origin}`));
   },
   credentials: true,
 };
 
-// Apply CORS and handle preflight early
 app.use(cors(corsOptions));
-app.options("*", cors(corsOptions)); // preflight for all routes
+app.options("*", cors(corsOptions));
 
 app.use(express.json({ limit: "10mb" }));
 app.use(cookieParser());
@@ -60,13 +54,13 @@ app.use(morgan("dev"));
 // Important for secure cookies behind proxies (when COOKIE_SECURE=true in prod)
 app.set("trust proxy", 1);
 
-// ❌ Disable ETag on API responses to avoid 304 for dynamic JSON (esp. /auth/me)
+// ❌ Disable ETag on API responses to avoid stale 304s
 app.set("etag", false);
 
 // 🔐 attach req.user for all subsequent routes (reads JWT from cookie)
 app.use(attachUser);
 
-// 🚫 Make all /api responses uncacheable and vary by auth so clients never get a cached PUBLIC session
+// 🚫 Make all /api responses uncacheable and vary by Cookie/Authorization
 app.use("/api", (req, res, next) => {
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.set("Pragma", "no-cache");
@@ -84,7 +78,7 @@ app.use("/uploads", express.static(path.join(__dirname, "..", "public", "uploads
 /* --------------------- Quick config snapshot -------------------- */
 const OSRM_URL = process.env.OSRM_URL || "";
 const MAPBOX_TOKEN = process.env.MAPBOX_TOKEN || "";
-const ROUTE_PROFILE = process.env.ROUTE_PROFILE || "driving"; // driving | foot | bike
+const ROUTE_PROFILE = process.env.ROUTE_PROFILE || "driving";
 
 /* ----------------------------- Health --------------------------- */
 app.get("/health", (_req, res) => {
@@ -100,7 +94,7 @@ app.get("/health", (_req, res) => {
     env: process.env.NODE_ENV || "development",
     cors: { allowOrigins },
     auth: {
-      local_login_enabled: true, // email + password
+      local_login_enabled: true,
       dev_login_enabled: process.env.NODE_ENV !== "production" && !!process.env.AUTH_DEV_SECRET,
       google_oauth_enabled: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
       cookie: {
@@ -112,19 +106,14 @@ app.get("/health", (_req, res) => {
 });
 
 /* ----------------------------- Routes --------------------------- */
-// Auth (login/logout/me)
 app.use("/api/auth", authRouter);
 if (process.env.NODE_ENV !== "production") {
   app.use("/api/auth", devAuthRouter);
 }
-// Admin-only user management
 app.use("/api/users", usersRouter);
 app.use("/api/auth/google", googleAuthRouter);
 
-// Public, read-only endpoints (shareable links, etc.)
 app.use("/api/public", publicRouter);
-
-// Private API (routers themselves check roles as needed)
 app.use("/api/properties", propertiesRouter);
 app.use("/api/projects", projectsRouter);
 app.use("/api/pois", poisRouter);
@@ -133,8 +122,6 @@ app.use("/api/import", importRouter);
 /* --------------------------- 404 & Errors ------------------------ */
 app.use((_req, res) => res.status(404).json({ error: "not found" }));
 
-// Convert CORS origin rejections (or other thrown errors) to JSON
-// (keep last so it catches anything above)
 app.use((err, _req, res, _next) => {
   if (String(err?.message || "").startsWith("CORS blocked for origin:")) {
     return res.status(403).json({ error: err.message });
@@ -156,12 +143,7 @@ async function ensureMasterAdmin() {
 
   const existing = await User.findOne({ email }).exec();
   if (!existing) {
-    const u = new User({
-      email,
-      name: email.split("@")[0],
-      role: "ADMIN",
-      status: "ACTIVE",
-    });
+    const u = new User({ email, name: email.split("@")[0], role: "ADMIN", status: "ACTIVE" });
     await u.setPassword(password);
     await u.save();
     console.log(`✅ Master admin created: ${email}`);
@@ -169,25 +151,12 @@ async function ensureMasterAdmin() {
   }
 
   let changed = false;
-  if (force && existing.role !== "ADMIN") {
-    existing.role = "ADMIN";
-    changed = true;
-  }
-  if (force && existing.status !== "ACTIVE") {
-    existing.status = "ACTIVE";
-    changed = true;
-  }
-  if (force && password) {
-    await existing.setPassword(password);
-    changed = true;
-  }
+  if (force && existing.role !== "ADMIN") { existing.role = "ADMIN"; changed = true; }
+  if (force && existing.status !== "ACTIVE") { existing.status = "ACTIVE"; changed = true; }
+  if (force && password) { await existing.setPassword(password); changed = true; }
 
-  if (changed) {
-    await existing.save();
-    console.log(`✅ Master admin updated (force): ${email}`);
-  } else {
-    console.log(`ℹ️  Master admin already exists: ${email}`);
-  }
+  if (changed) { await existing.save(); console.log(`✅ Master admin updated (force): ${email}`); }
+  else { console.log(`ℹ️  Master admin already exists: ${email}`); }
 }
 
 /* --------------------------- Start HTTP ------------------------- */
@@ -225,8 +194,6 @@ app.listen(PORT, () => {
     console.log("⏳ Connecting to MongoDB…");
     await connectDB(uri);
     console.log("✅ MongoDB connected");
-
-    // Bootstrap a master admin if configured
     await ensureMasterAdmin();
   } catch (e) {
     console.error("❌ DB connect failed:", e?.message || e);

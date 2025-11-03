@@ -1,59 +1,18 @@
-// src/routes/auth.js
 import express from "express";
-import jwt from "jsonwebtoken";
 import User from "../models/User.js";
+import { signAccessCookie, clearAccessCookie } from "../middleware/auth.js";
 
 const router = express.Router();
 
 /* ========= Config ========= */
-const JWT_SECRET       = process.env.JWT_SECRET || "dev-secret";
-const COOKIE_NAME      = process.env.COOKIE_NAME || "access";     // must match attachUser
-const COOKIE_DOMAIN    = process.env.COOKIE_DOMAIN || undefined;  // undefined on localhost
-const COOKIE_SECURE    = String(process.env.COOKIE_SECURE || "").toLowerCase() === "true";
-const SAME_SITE        = COOKIE_SECURE ? "none" : "lax";          // cross-site when secure
-const WEB_AFTER_LOGIN  = process.env.WEB_AFTER_LOGIN || "/";
-
-/* ========= Helpers ========= */
-function sign(user) {
-  return jwt.sign(
-    {
-      sub: user.email,         // subject = email for convenience
-      uid: String(user._id),   // canonical id for attachUser -> req.user.uid
-      role: user.role,
-      email: user.email,
-    },
-    JWT_SECRET,
-    { expiresIn: "7d" }
-  );
-}
-
-function setAuthCookie(res, token) {
-  res.cookie(COOKIE_NAME, token, {
-    httpOnly: true,
-    sameSite: SAME_SITE,
-    secure: COOKIE_SECURE,
-    domain: COOKIE_DOMAIN, // fine if undefined locally
-    path: "/",
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7d
-  });
-}
-
-function clearAuthCookie(res) {
-  res.clearCookie(COOKIE_NAME, {
-    httpOnly: true,
-    sameSite: SAME_SITE,
-    secure: COOKIE_SECURE,
-    domain: COOKIE_DOMAIN,
-    path: "/",
-  });
-}
+const WEB_AFTER_LOGIN = process.env.WEB_AFTER_LOGIN || "/";
 
 /* ========= Routes ========= */
 
 /** Return current session (public-friendly, never cached) */
 router.get("/me", async (req, res) => {
   try {
-    // prevent 304s and stale PUBLIC responses
+    // Prevent 304/stale cache
     res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
     res.set("Pragma", "no-cache");
     res.set("Expires", "0");
@@ -100,10 +59,13 @@ router.post("/login", async (req, res) => {
     const ok = await user.checkPassword(password);
     if (!ok) return res.status(401).json({ error: "invalid_credentials" });
 
-    const token = sign(user);
-    setAuthCookie(res, token);
+    // ✅ Set cross-subdomain cookie: SameSite=None; Secure; Domain=.pawanssiddhi.in
+    signAccessCookie(res, {
+      uid: String(user._id),
+      email: user.email,
+      role: user.role,
+    }, "7d");
 
-    // include id/isMaster so SPA can flip UI immediately without waiting for /me
     const master = String(process.env.MASTER_ADMIN_EMAIL || "").toLowerCase();
     const isMaster = String(user.email || "").toLowerCase() === master;
 
@@ -144,8 +106,11 @@ router.post("/change-password", async (req, res) => {
     await u.save();
 
     // refresh cookie with fresh claims
-    const token = sign(u);
-    setAuthCookie(res, token);
+    signAccessCookie(res, {
+      uid: String(u._id),
+      email: u.email,
+      role: u.role,
+    }, "7d");
 
     return res.json({ ok: true });
   } catch (e) {
@@ -156,7 +121,7 @@ router.post("/change-password", async (req, res) => {
 
 /** Logout */
 router.post("/logout", (_req, res) => {
-  clearAuthCookie(res);
+  clearAccessCookie(res);
   res.json({ ok: true });
 });
 
