@@ -1,121 +1,50 @@
-// src/routes/import.js
 import express from "express";
 import multer from "multer";
 import xlsx from "xlsx";
 import Property from "../models/Property.js";
 import { recomputeForProperty } from "../services/nearby.js";
-import { google } from "googleapis";
 
 const router = express.Router();
 
 /* ------------------------------------------------------------------ */
-/*                         Google Drive OAuth                          */
+/*                   Google Drive OAuth (uses auth.google)             */
 /* ------------------------------------------------------------------ */
-const GID = process.env.GOOGLE_CLIENT_ID || "";
-const GSECRET = process.env.GOOGLE_CLIENT_SECRET || "";
-const GREDIRECT = process.env.GOOGLE_REDIRECT_URI || "";
-const GOOGLE_ENABLED = !!(GID && GSECRET && GREDIRECT);
 
-let oauth2Client = null;
-/** Keep tokens in memory (you can swap this for DB storage later). */
-let driveTokens = null;
+// Simple auth guard (use your own if you already have one)
+const requireAuth = (req, res, next) => {
+  if (!req.user) return res.status(401).json({ error: "login_required" });
+  next();
+};
 
-if (GOOGLE_ENABLED) {
-  oauth2Client = new google.auth.OAuth2(GID, GSECRET, GREDIRECT);
-  if (driveTokens) oauth2Client.setCredentials(driveTokens);
-}
+// Start → delegate to the new login route which sets state=<userId>
+router.get("/gdrive/start", requireAuth, (_req, res) => {
+  return res.redirect(302, "/api/auth/google/login");
+});
 
-const DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive.file"];
+// Status → read tokens saved on the user
+router.get("/gdrive/status", requireAuth, (req, res) => {
+  const g = req.user?.gdrive || {};
+  const connected = !!(g.access_token || g.refresh_token);
+  const expires_in_s = g?.expiry_date
+    ? Math.max(0, Math.floor((g.expiry_date - Date.now()) / 1000))
+    : null;
 
-function ensureGoogleConfigured(res) {
-  if (!GOOGLE_ENABLED) {
-    res
-      .status(400)
-      .json({ error: "[GDRIVE] Missing GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REDIRECT_URI" });
-    return false;
-  }
-  return true;
-}
-
-function getAuthUrl() {
-  return oauth2Client.generateAuthUrl({
-    access_type: "offline",
-    prompt: "consent",
-    scope: DRIVE_SCOPES,
-    redirect_uri: GREDIRECT,
+  res.set("Cache-Control", "no-store"); // avoid 304 while polling
+  return res.status(200).json({
+    connected,
+    has_refresh: !!g.refresh_token,
+    expires_in_s,
   });
-}
-
-/** Kick off Google OAuth */
-router.get("/gdrive/start", (req, res) => {
-  if (!ensureGoogleConfigured(res)) return;
-  try {
-    const url = getAuthUrl();
-    return res.redirect(url);
-  } catch (e) {
-    console.error("GDrive start error:", e);
-    return res.status(500).json({ error: "auth_url_failed" });
-  }
-});
-
-/** OAuth callback – exchanges code for tokens and stores refresh token */
-router.get("/gdrive/callback", async (req, res) => {
-  if (!ensureGoogleConfigured(res)) return;
-  try {
-    const code = String(req.query.code || "");
-    if (!code) return res.status(400).send("Missing ?code");
-
-    const { tokens } = await oauth2Client.getToken({ code, redirect_uri: GREDIRECT });
-    driveTokens = tokens;
-    oauth2Client.setCredentials(tokens);
-
-    // Friendly HTML response so a popup can be closed by the user
-    return res.send(
-      `<html><body style="font-family: system-ui; padding: 16px">
-          <h3>Google Drive connected ✅</h3>
-          <p>You can close this tab and return to the app.</p>
-        </body></html>`
-    );
-  } catch (e) {
-    console.error("GDrive callback error:", e);
-    return res.status(500).send("Google auth failed");
-  }
-});
-
-/** Quick status endpoint the UI can poll */
-router.get("/gdrive/status", (_req, res) => {
-  const hasRefresh =
-    !!driveTokens?.refresh_token ||
-    !!oauth2Client?.credentials?.refresh_token ||
-    !!oauth2Client?.credentials?.access_token;
-  res.json({ connected: GOOGLE_ENABLED && hasRefresh });
 });
 
 /* ------------------------------------------------------------------ */
 /*                           File Import (Excel)                       */
 /* ------------------------------------------------------------------ */
 
-// Multer in-memory store (no temp files on disk)
 const upload = multer({ storage: multer.memoryStorage() });
 
-// Health
 router.get("/health", (_req, res) => res.json({ ok: true }));
 
-/**
- * POST /api/import/properties
- * Form-Data:
- *  - file: .xlsx or .csv
- *  - computeNearby: "true" | "false" (default: false)
- *
- * Expected columns (header names; case-insensitive):
- *  - district, taluka, village
- *  - ulpin, survey_gat_no
- *  - area_hectares, area_acres, area_sq_m, area_sq_ft
- *  - cultiv_hectares, cultiv_acres, cultiv_sq_m, cultiv_sq_ft
- *  - land_use (AGRICULTURE/NON_AGRICULTURE/INDUSTRIAL/RESIDENTIAL/COMMERCIAL)
- *  - year, crop_code, crop_name
- *  - lng, lat  (optional; if both present -> sets geo.coordinates)
- */
 router.post("/properties", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "file is required" });
@@ -134,7 +63,6 @@ router.post("/properties", upload.single("file"), async (req, res) => {
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
       try {
-        // normalize header keys (lowercase)
         const obj = {};
         Object.keys(r).forEach((k) => (obj[k.toLowerCase().trim()] = r[k]));
 
@@ -176,7 +104,6 @@ router.post("/properties", upload.single("file"), async (req, res) => {
           },
         });
 
-        // coordinates
         const lng = num(obj.lng);
         const lat = num(obj.lat);
         if (isFinite(lng) && isFinite(lat)) {
@@ -188,7 +115,7 @@ router.post("/properties", upload.single("file"), async (req, res) => {
         }
 
         await doc.save();
-        out.push({ row: i + 2, _id: doc._id }); // +2 accounts for header row + 1-indexing
+        out.push({ row: i + 2, _id: doc._id });
       } catch (e) {
         errors.push({ row: i + 2, error: e.message });
       }

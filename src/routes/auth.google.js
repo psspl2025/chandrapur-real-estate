@@ -13,7 +13,9 @@ const {
 
 const APP_HOME = WEB_AFTER_LOGIN || "https://psspl.pawanssiddhi.in/";
 
-// Ensure env is present
+// quick sanity
+router.get("/ping", (_req, res) => res.json({ ok: true }));
+
 const needConfig = (_req, res, next) => {
   if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REDIRECT_URI) {
     return res.status(500).json({ error: "google_oauth_not_configured" });
@@ -21,22 +23,7 @@ const needConfig = (_req, res, next) => {
   next();
 };
 
-// Sanity check
-router.get("/ping", (_req, res) => res.json({ ok: true }));
-
-// Connection status for the logged-in user
-router.get("/status", (req, res) => {
-  const g = req.user?.gdrive;
-  res.json({
-    connected: !!(g?.access_token || g?.refresh_token),
-    has_refresh: !!g?.refresh_token,
-    expires_in_s: g?.expiry_date
-      ? Math.max(0, Math.floor((g.expiry_date - Date.now()) / 1000))
-      : null,
-  });
-});
-
-// Kick off Google OAuth: send current user id in `state`
+// Start OAuth: send state=<userId>
 router.get("/login", needConfig, (req, res) => {
   const uid = req.user?._id;
   if (!uid) return res.status(401).json({ error: "login_required" });
@@ -55,8 +42,8 @@ router.get("/login", needConfig, (req, res) => {
   res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
 });
 
-// Helper: fetch with timeout
-async function postFormWithTimeout(url, form, ms = 12000) {
+// tiny helper
+async function postFormWithTimeout(url, form, ms = 15000) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
   try {
@@ -72,21 +59,19 @@ async function postFormWithTimeout(url, form, ms = 12000) {
   }
 }
 
-// Handle callback: use req.user OR fallback to `state`
+// Callback: persist tokens to user.gdrive
 router.get("/callback", needConfig, async (req, res) => {
   try {
     const code = String(req.query.code || "");
     const state = String(req.query.state || "");
     if (!code) return res.redirect(APP_HOME + "?gdrive_error=missing_code");
 
-    // Prefer req.user first; otherwise fall back to state
+    // prefer cookie user; else use state
     let userId = req.user?._id ? String(req.user._id) : state;
-
     if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
       return res.redirect(APP_HOME + "?gdrive_error=not_logged_in");
     }
 
-    // Exchange code → tokens
     const form = new URLSearchParams({
       code,
       client_id: GOOGLE_CLIENT_ID,
@@ -107,14 +92,13 @@ router.get("/callback", needConfig, async (req, res) => {
       return res.redirect(`${APP_HOME}?gdrive_error=${reason}`);
     }
 
-    // Persist tokens for that user
     await User.findByIdAndUpdate(
       userId,
       {
         $set: {
           gdrive: {
             access_token: tokens.access_token || null,
-            refresh_token: tokens.refresh_token || null, // may be null on subsequent consents
+            refresh_token: tokens.refresh_token || null,
             scope: tokens.scope || null,
             token_type: tokens.token_type || null,
             expiry_date: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : null,
@@ -124,12 +108,23 @@ router.get("/callback", needConfig, async (req, res) => {
       { strict: false }
     ).exec();
 
-    // Done → back to app
     return res.redirect(APP_HOME + "?gdrive=connected");
   } catch (e) {
     const msg = encodeURIComponent(String(e?.message || e));
     return res.redirect(`${APP_HOME}?gdrive_error=${msg}`);
   }
+});
+
+// Status (per logged-in user)
+router.get("/status", (req, res) => {
+  const g = req.user?.gdrive;
+  res.json({
+    connected: !!(g?.access_token || g?.refresh_token),
+    has_refresh: !!g?.refresh_token,
+    expires_in_s: g?.expiry_date
+      ? Math.max(0, Math.floor((g.expiry_date - Date.now()) / 1000))
+      : null,
+  });
 });
 
 export default router;
