@@ -1,52 +1,58 @@
-// src/routes/auth.google.js
-import express from "express";
-const router = express.Router();
+import mongoose from "mongoose";
+import bcrypt from "bcryptjs";
+import isEmail from "validator/lib/isEmail.js";
 
-const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, WEB_AFTER_LOGIN } = process.env;
+const UserSchema = new mongoose.Schema(
+  {
+    name: { type: String, trim: true, default: "" },
 
-const needConfig = (_req, res, next) =>
-  (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REDIRECT_URI)
-    ? res.status(500).json({ error: "google_oauth_not_configured" }) : next();
+    email: {
+      type: String,
+      unique: true,
+      required: true,
+      lowercase: true,
+      trim: true,
+      validate: { validator: isEmail, message: "Invalid email" },
+      index: true,
+    },
 
-router.get("/ping", (_req, res) => res.json({ ok: true }));
+    role: { type: String, enum: ["CLIENT", "EDITOR", "ADMIN"], default: "CLIENT", index: true },
+    passwordHash: { type: String, default: null },
+    status: { type: String, enum: ["ACTIVE", "DISABLED"], default: "ACTIVE", index: true },
 
-router.get("/login", needConfig, (req, res) => {
-  if (!req.user) return res.status(401).json({ error: "login_required" });
-  const p = new URLSearchParams({
-    client_id: GOOGLE_CLIENT_ID,
-    redirect_uri: GOOGLE_REDIRECT_URI,
-    response_type: "code",
-    scope: "https://www.googleapis.com/auth/drive.file",
-    access_type: "offline",
-    include_granted_scopes: "true",
-    prompt: "consent",
-    state: String(req.user?._id || ""),
-  });
-  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${p.toString()}`);
-});
+    // 🔒 require password change on next login (for temp/default pw)
+    forcePwChange: { type: Boolean, default: false },
 
-router.get("/callback", needConfig, async (req, res) => {
-  try {
-    const body = new URLSearchParams({
-      code: String(req.query.code || ""),
-      client_id: GOOGLE_CLIENT_ID,
-      client_secret: GOOGLE_CLIENT_SECRET,
-      redirect_uri: GOOGLE_REDIRECT_URI,
-      grant_type: "authorization_code",
-    });
-    const r = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: body.toString(),
-    });
-    const tokens = await r.json();
-    if (!r.ok) throw new Error(tokens.error || "token_exchange_failed");
-    const back = WEB_AFTER_LOGIN || "https://psspl.pawanssiddhi.in/";
-    res.redirect(`${back}?gdrive=connected`);
-  } catch (e) {
-    const back = WEB_AFTER_LOGIN || "https://psspl.pawanssiddhi.in/";
-    res.redirect(`${back}?gdrive_error=${encodeURIComponent(String(e.message || e))}`);
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+
+    // ✅ Google Drive tokens (persisted after OAuth callback)
+    gdrive: {
+      access_token: { type: String, default: null },
+      refresh_token: { type: String, default: null },
+      scope: { type: String, default: null },
+      token_type: { type: String, default: null },
+      expiry_date: { type: Number, default: null }, // ms epoch
+    },
+  },
+  {
+    timestamps: true,
+    toJSON: {
+      transform(_doc, ret) {
+        delete ret.passwordHash;
+        return ret;
+      },
+    },
   }
-});
+);
 
-export default router;
+UserSchema.methods.setPassword = async function (raw) {
+  if (typeof raw !== "string" || raw.length < 8) throw new Error("password too short");
+  this.passwordHash = await bcrypt.hash(String(raw), 10);
+};
+
+UserSchema.methods.checkPassword = async function (raw) {
+  if (!this.passwordHash) return false;
+  return bcrypt.compare(String(raw || ""), String(this.passwordHash));
+};
+
+export default mongoose.models.User || mongoose.model("User", UserSchema);

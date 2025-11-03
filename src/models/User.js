@@ -5,6 +5,7 @@ import isEmail from "validator/lib/isEmail.js";
 const UserSchema = new mongoose.Schema(
   {
     name: { type: String, trim: true, default: "" },
+
     email: {
       type: String,
       unique: true,
@@ -14,6 +15,7 @@ const UserSchema = new mongoose.Schema(
       validate: { validator: isEmail, message: "Invalid email" },
       index: true,
     },
+
     role: { type: String, enum: ["CLIENT", "EDITOR", "ADMIN"], default: "CLIENT", index: true },
     passwordHash: { type: String, default: null },
     status: { type: String, enum: ["ACTIVE", "DISABLED"], default: "ACTIVE", index: true },
@@ -22,6 +24,15 @@ const UserSchema = new mongoose.Schema(
     forcePwChange: { type: Boolean, default: false },
 
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+
+    // ✅ Google Drive tokens (persisted after OAuth callback)
+    gdrive: {
+      access_token: { type: String, default: null },
+      refresh_token: { type: String, default: null },
+      scope: { type: String, default: null },
+      token_type: { type: String, default: null },
+      expiry_date: { type: Number, default: null }, // ms epoch
+    },
   },
   {
     timestamps: true,
@@ -35,9 +46,7 @@ const UserSchema = new mongoose.Schema(
 );
 
 UserSchema.methods.setPassword = async function (raw) {
-  if (typeof raw !== "string" || raw.length < 8) {
-    throw new Error("password too short");
-  }
+  if (typeof raw !== "string" || raw.length < 8) throw new Error("password too short");
   this.passwordHash = await bcrypt.hash(String(raw), 10);
 };
 
