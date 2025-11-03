@@ -14,6 +14,7 @@ import { connectDB } from "./db.js";
 
 // Models (for bootstrap)
 import User from "./models/User.js";
+import googleAuthRouter from "./routes/auth.google.js";
 
 // Auth helpers/middleware & routers
 import { attachUser } from "./middleware/auth.js"; // parses JWT cookie → req.user
@@ -106,6 +107,7 @@ if (process.env.NODE_ENV !== "production") {
 }
 // Admin-only user management
 app.use("/api/users", usersRouter);
+app.use("/api/auth/google", googleAuthRouter);
 
 // Public, read-only endpoints (shareable links, etc.)
 app.use("/api/public", publicRouter);
