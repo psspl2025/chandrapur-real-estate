@@ -1,14 +1,15 @@
+// src/routes/auth.google.js
 import express from "express";
-import User from "../models/User.js"; // adjust path if needed
-
 const router = express.Router();
+
 const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, WEB_AFTER_LOGIN } = process.env;
 
 const needConfig = (_req, res, next) =>
   (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REDIRECT_URI)
     ? res.status(500).json({ error: "google_oauth_not_configured" }) : next();
 
-// GET /api/auth/google/login
+router.get("/ping", (_req, res) => res.json({ ok: true }));
+
 router.get("/login", needConfig, (req, res) => {
   if (!req.user) return res.status(401).json({ error: "login_required" });
   const p = new URLSearchParams({
@@ -19,12 +20,11 @@ router.get("/login", needConfig, (req, res) => {
     access_type: "offline",
     include_granted_scopes: "true",
     prompt: "consent",
-    state: String(req.user._id || "")
+    state: String(req.user?._id || ""),
   });
   res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${p.toString()}`);
 });
 
-// GET /api/auth/google/callback
 router.get("/callback", needConfig, async (req, res) => {
   try {
     const body = new URLSearchParams({
@@ -41,23 +41,11 @@ router.get("/callback", needConfig, async (req, res) => {
     });
     const tokens = await r.json();
     if (!r.ok) throw new Error(tokens.error || "token_exchange_failed");
-
-    if (req.user?._id) {
-      await User.findByIdAndUpdate(req.user._id, {
-        $set: {
-          gdrive: {
-            access_token: tokens.access_token,
-            refresh_token: tokens.refresh_token,
-            scope: tokens.scope,
-            token_type: tokens.token_type,
-            expiry_date: Date.now() + (tokens.expires_in || 0) * 1000,
-          },
-        },
-      }).exec();
-    }
-    res.redirect((WEB_AFTER_LOGIN || "https://psspl.pawanssiddhi.in") + "?gdrive=connected");
+    const back = WEB_AFTER_LOGIN || "https://psspl.pawanssiddhi.in/";
+    res.redirect(`${back}?gdrive=connected`);
   } catch (e) {
-    res.redirect((WEB_AFTER_LOGIN || "https://psspl.pawanssiddhi.in") + `?gdrive_error=${encodeURIComponent(String(e.message||e))}`);
+    const back = WEB_AFTER_LOGIN || "https://psspl.pawanssiddhi.in/";
+    res.redirect(`${back}?gdrive_error=${encodeURIComponent(String(e.message || e))}`);
   }
 });
 
