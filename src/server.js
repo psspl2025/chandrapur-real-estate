@@ -60,8 +60,20 @@ app.use(morgan("dev"));
 // Important for secure cookies behind proxies (when COOKIE_SECURE=true in prod)
 app.set("trust proxy", 1);
 
+// ❌ Disable ETag on API responses to avoid 304 for dynamic JSON (esp. /auth/me)
+app.set("etag", false);
+
 // 🔐 attach req.user for all subsequent routes (reads JWT from cookie)
 app.use(attachUser);
+
+// 🚫 Make all /api responses uncacheable and vary by auth so clients never get a cached PUBLIC session
+app.use("/api", (req, res, next) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
+  res.set("Vary", "Cookie, Authorization");
+  next();
+});
 
 /* ---------------------------- Static ---------------------------- */
 const __filename = fileURLToPath(import.meta.url);
