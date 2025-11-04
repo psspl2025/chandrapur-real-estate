@@ -1,3 +1,21 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Minimal, mobile-friendly globals */
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  @apply bg-slate-900 text-slate-100 antialiased;
+  margin: 0;               /* prevent unwanted spacing */
+  overflow-x: hidden;      /* avoid sideways scroll on small screens */
+}
+
+/* Media elements scale in containers */
+img, video, canvas, svg {
+  max-width: 100%;
+  height: auto;
+}
+
