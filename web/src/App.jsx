@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import React, { createContext, useContext, useEffect, useState } from "react";
 
 import Layout from "./components/Layout";
@@ -31,7 +31,16 @@ function AuthProvider({ children }) {
 
   const refreshMe = async () => {
     try {
-      const res = await fetch(`${API_BASE}/auth/me`, { credentials: "include" });
+      // prevent any cache-related 304/stale responses
+      const ts = Date.now();
+      const res = await fetch(`${API_BASE}/auth/me?ts=${ts}`, {
+        credentials: "include",
+        cache: "no-store",
+        headers: {
+          "Cache-Control": "no-cache",
+          Pragma: "no-cache",
+        },
+      });
       if (res.ok) {
         const data = await res.json();
         setMe(data || null);
@@ -96,6 +105,65 @@ function NotFound() {
   );
 }
 
+/* ================== Google Drive OAuth exchange pages ================== */
+
+// Handles hash token from /api/auth/google/callback, finalizes session cookie on API,
+// refreshes /auth/me, then redirects to success page.
+function GDriveCallback() {
+  const navigate = useNavigate();
+  const { refreshMe } = useAuth();
+
+  useEffect(() => {
+    // token is in the hash query: #/gdrive-callback?token=...
+    const hashQ = window.location.hash.split("?")[1] || "";
+    const params = new URLSearchParams(hashQ);
+    const token = params.get("token");
+
+    if (!token) {
+      navigate("/properties?gdrive_error=missing_token", { replace: true });
+      return;
+    }
+
+    (async () => {
+      try {
+        const resp = await fetch(`${API_BASE}/auth/finalize`, {
+          method: "POST",
+          credentials: "include",             // crucial for cookie set
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token }),
+        });
+        if (!resp.ok) throw new Error("finalize_failed");
+        // refresh the in-app session
+        await refreshMe();
+        // clean hash, go to success page
+        navigate("/gdrive-connected", { replace: true });
+      } catch {
+        navigate("/properties?gdrive_error=exchange_failed", { replace: true });
+      }
+    })();
+  }, [navigate, refreshMe]);
+
+  return (
+    <div className="p-8 text-center text-slate-200">
+      Finishing Google Drive connection…
+    </div>
+  );
+}
+
+function GDriveConnected() {
+  return (
+    <div className="p-6 text-slate-200">
+      <h2 className="text-xl font-semibold mb-2">✅ Google Drive Connected</h2>
+      <p className="text-slate-400 mb-4">
+        Your Google Drive is linked. You can now upload documents and export files.
+      </p>
+      <a href="/import" className="text-sky-400 hover:underline">Go to Import</a>
+      <span className="mx-2 text-slate-500">|</span>
+      <a href="/projects" className="text-sky-400 hover:underline">Go to Projects</a>
+    </div>
+  );
+}
+
 /* ================== App Router ================== */
 export default function App() {
   return (
@@ -108,6 +176,10 @@ export default function App() {
             <Route path="property/:id" element={<PropertyDetail />} />
             <Route path="login" element={<Login />} />
             <Route path="change-password" element={<ChangePassword />} />
+
+            {/* Google Drive OAuth exchange routes */}
+            <Route path="gdrive-callback" element={<GDriveCallback />} />
+            <Route path="gdrive-connected" element={<GDriveConnected />} />
 
             {/* EDITOR/ADMIN */}
             <Route
