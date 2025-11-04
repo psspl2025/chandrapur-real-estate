@@ -3,6 +3,7 @@ import multer from "multer";
 import xlsx from "xlsx";
 import Property from "../models/Property.js";
 import { recomputeForProperty } from "../services/nearby.js";
+import User from "../models/User.js"; // ⬅️ added for DB-backed gdrive status
 
 const router = express.Router();
 
@@ -21,20 +22,30 @@ router.get("/gdrive/start", requireAuth, (_req, res) => {
   return res.redirect(302, "/api/auth/google/login");
 });
 
-// Status → read tokens saved on the user
-router.get("/gdrive/status", requireAuth, (req, res) => {
-  const g = req.user?.gdrive || {};
-  const connected = !!(g.access_token || g.refresh_token);
-  const expires_in_s = g?.expiry_date
-    ? Math.max(0, Math.floor((g.expiry_date - Date.now()) / 1000))
-    : null;
+// Status → read tokens saved on the user (DB-backed)
+router.get("/gdrive/status", requireAuth, async (req, res) => {
+  try {
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.set("Pragma", "no-cache");
+    res.set("Expires", "0");
+    res.set("Vary", "Cookie");
 
-  res.set("Cache-Control", "no-store"); // avoid 304 while polling
-  return res.status(200).json({
-    connected,
-    has_refresh: !!g.refresh_token,
-    expires_in_s,
-  });
+    const uid = req.user?.uid;
+    if (!uid) return res.status(401).json({ error: "auth required" });
+
+    const u = await User.findById(uid).select("gdrive").lean();
+    const g = u?.gdrive || {};
+
+    const connected = !!(g.access_token || g.refresh_token);
+    const has_refresh = !!g.refresh_token;
+    const expires_in_s = g?.expiry_date
+      ? Math.max(0, Math.floor((g.expiry_date - Date.now()) / 1000))
+      : null;
+
+    return res.status(200).json({ connected, has_refresh, expires_in_s });
+  } catch (e) {
+    return res.status(500).json({ error: "status_failed" });
+  }
 });
 
 /* ------------------------------------------------------------------ */
