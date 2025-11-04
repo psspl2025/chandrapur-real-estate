@@ -23,13 +23,16 @@ function LinkItem({ to, label, onClick }) {
 function TopRightAuth() {
   const { me, role = "PUBLIC", logout } = useAuth();
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 min-w-0">{/* min-w-0 ensures truncation works */}
       <span className="text-[11px] px-2 py-0.5 rounded bg-slate-700/70">
         {role.toUpperCase()}
       </span>
       {me ? (
         <>
-          <span className="text-xs text-slate-300 truncate max-w-[40vw]" title={me.email || me.name}>
+          <span
+            className="text-xs text-slate-300 truncate max-w-[40vw]"
+            title={me.email || me.name}
+          >
             {me.name || me.email}
           </span>
           <button
@@ -67,7 +70,6 @@ export default function Layout() {
             onClick={() => setMobileOpen((v) => !v)}
             className="rounded p-2 bg-slate-800 hover:bg-slate-700"
           >
-            {/* simple hamburger */}
             <div className="w-5 h-0.5 bg-slate-200 mb-1" />
             <div className="w-5 h-0.5 bg-slate-200 mb-1" />
             <div className="w-5 h-0.5 bg-slate-200" />
@@ -90,9 +92,7 @@ export default function Layout() {
                   <LinkItem to="/import" label="Import Properties" onClick={closeMobile} />
                 </>
               )}
-              {isMaster && (
-                <LinkItem to="/admin/users" label="Users" onClick={closeMobile} />
-              )}
+              {isMaster && <LinkItem to="/admin/users" label="Users" onClick={closeMobile} />}
             </nav>
           </div>
         )}
@@ -100,20 +100,17 @@ export default function Layout() {
 
       {/* Desktop sidebar */}
       <aside className="hidden md:flex md:w-72 bg-slate-900 border-r border-slate-800 p-4 flex-col">
-        {/* Logo */}
         <div className="mb-3 rounded-md bg-white/95 p-2 shadow-sm">
           <div className="w-full aspect-[3/1]">
             <img src="/logo.png" alt="Company logo" className="w-full h-full object-contain" />
           </div>
         </div>
 
-        {/* Company info */}
         <div className="mb-3">
           <div className="font-semibold text-[16px] leading-snug">Pawanssiddhi Group of Companies</div>
           <div className="text-slate-300 text-xs">Chandrapur, Maharashtra (India)</div>
         </div>
 
-        {/* Sub-brand */}
         <div className="mb-3">
           <div className="inline-flex items-center gap-2 rounded-lg border border-sky-500/30 bg-sky-600/15 px-3 py-2">
             <span className="uppercase tracking-wide text-[11px] text-sky-300 font-semibold">
@@ -122,12 +119,10 @@ export default function Layout() {
           </div>
         </div>
 
-        {/* Auth */}
         <div className="mb-3">
           <TopRightAuth />
         </div>
 
-        {/* Navigation */}
         <nav className="space-y-1">
           <LinkItem to="/" label="Properties" />
           {isStaff && (
@@ -152,9 +147,7 @@ export default function Layout() {
           )}
         </nav>
 
-        <div className="mt-auto pt-4 text-[11px] text-slate-500">
-          © {new Date().getFullYear()} Pawanssiddhi Group
-        </div>
+        <div className="mt-auto pt-4 text-[11px] text-slate-500">© {new Date().getFullYear()} Pawanssiddhi Group</div>
       </aside>
 
       {/* Content */}

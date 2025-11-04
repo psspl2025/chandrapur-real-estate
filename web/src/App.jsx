@@ -38,7 +38,7 @@ function AuthProvider({ children }) {
         cache: "no-store",
         headers: {
           "cache-control": "no-store, no-cache, must-revalidate, proxy-revalidate",
-          "pragma": "no-cache",
+          pragma: "no-cache",
         },
       });
       if (res.ok) {
@@ -65,7 +65,9 @@ function AuthProvider({ children }) {
     setRole("PUBLIC");
   };
 
-  useEffect(() => { refreshMe(); }, []);
+  useEffect(() => {
+    refreshMe();
+  }, []);
 
   const value = { role, me, loading, refreshMe, logout };
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
@@ -86,7 +88,7 @@ function MasterRoute({ children }) {
   return <Navigate to="/unauthorized" replace />;
 }
 
-/* =========== Google Drive OAuth exchange pages (if you use them) =========== */
+/* =========== Google Drive OAuth exchange pages =========== */
 function GDriveCallback() {
   const navigate = useNavigate();
   const { refreshMe } = useAuth();
@@ -160,7 +162,7 @@ export default function App() {
             <Route path="login" element={<Login />} />
             <Route path="change-password" element={<ChangePassword />} />
 
-            {/* Google Drive (optional) */}
+            {/* Google Drive */}
             <Route path="gdrive-callback" element={<GDriveCallback />} />
             <Route path="gdrive-connected" element={<GDriveConnected />} />
 
