@@ -14,9 +14,7 @@ const {
 
 const APP_HOME = WEB_AFTER_LOGIN || "https://psspl.pawanssiddhi.in/";
 
-// quick sanity
-router.get("/ping", (_req, res) => res.json({ ok: true }));
-
+/* -------------------------- Middleware --------------------------- */
 const needConfig = (_req, res, next) => {
   if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REDIRECT_URI) {
     return res.status(500).json({ error: "google_oauth_not_configured" });
@@ -24,7 +22,15 @@ const needConfig = (_req, res, next) => {
   next();
 };
 
-// tiny helper
+// Prevent all caching
+router.use((_req, res, next) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
+  next();
+});
+
+// Small helper for token exchange
 async function postFormWithTimeout(url, form, ms = 15000) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
@@ -41,24 +47,27 @@ async function postFormWithTimeout(url, form, ms = 15000) {
   }
 }
 
-// middleware to stop caching
-router.use((_req, res, next) => {
-  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-  res.set("Pragma", "no-cache");
-  res.set("Expires", "0");
-  next();
-});
+/* --------------------------- Routes ------------------------------ */
 
-// Start OAuth: send state=<userId>
+// Ping
+router.get("/ping", (_req, res) => res.json({ ok: true }));
+
+/**
+ * Start OAuth: builds Google consent URL and redirects user.
+ * Accepts optional ?redirect=/somepath param to bring them back.
+ */
 router.get("/login", needConfig, (req, res) => {
-  // ✅ prefer uid/id; fallback to _id
   const cookieUid = req.user?.uid || req.user?.id || req.user?._id;
   const queryFallback = (req.query.uid || req.query.state || "").toString();
   const uid = cookieUid ? String(cookieUid) : queryFallback;
+  const redirect = String(req.query.redirect || APP_HOME);
 
   if (!uid || !mongoose.Types.ObjectId.isValid(uid)) {
     return res.status(401).json({ error: "login_required" });
   }
+
+  // Pass both uid and redirect target as JSON in state
+  const state = encodeURIComponent(JSON.stringify({ uid, redirect }));
 
   const params = new URLSearchParams({
     client_id: GOOGLE_CLIENT_ID,
@@ -68,27 +77,39 @@ router.get("/login", needConfig, (req, res) => {
     access_type: "offline",
     include_granted_scopes: "true",
     prompt: "consent",
-    state: String(uid),
+    state,
   });
 
   res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
 });
 
-// Callback: persist tokens to user.gdrive
+/**
+ * OAuth callback: exchanges code for tokens and saves them
+ * under user.gdrive; redirects back to SPA (default #/gdrive-connected)
+ */
 router.get("/callback", needConfig, async (req, res) => {
   try {
     const code = String(req.query.code || "");
-    const state = String(req.query.state || "");
+    const stateRaw = String(req.query.state || "");
     if (!code) return res.redirect(APP_HOME + "?gdrive_error=missing_code");
 
-    // ✅ prefer cookie user; else use Google state
+    // Extract state object safely
+    let stateObj = {};
+    try {
+      stateObj = JSON.parse(decodeURIComponent(stateRaw || "{}"));
+    } catch {}
+    const stateUid = stateObj.uid || "";
+    const redirect = stateObj.redirect || APP_HOME;
+
+    // Prefer cookie user; fallback to state UID
     const cookieUid = req.user?.uid || req.user?.id || req.user?._id || "";
-    let userId = cookieUid ? String(cookieUid) : state;
+    const userId = String(cookieUid || stateUid);
 
     if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
       return res.redirect(APP_HOME + "?gdrive_error=not_logged_in");
     }
 
+    // Exchange code → token
     const form = new URLSearchParams({
       code,
       client_id: GOOGLE_CLIENT_ID,
@@ -102,13 +123,14 @@ router.get("/callback", needConfig, async (req, res) => {
       form,
       15000
     );
-
     const tokens = await tokenResp.json();
+
     if (!tokenResp.ok) {
       const reason = encodeURIComponent(tokens?.error || "token_exchange_failed");
-      return res.redirect(`${APP_HOME}?gdrive_error=${reason}`);
+      return res.redirect(`${redirect}?gdrive_error=${reason}`);
     }
 
+    // Save tokens
     await User.findByIdAndUpdate(
       userId,
       {
@@ -118,21 +140,24 @@ router.get("/callback", needConfig, async (req, res) => {
             refresh_token: tokens.refresh_token || null,
             scope: tokens.scope || null,
             token_type: tokens.token_type || null,
-            expiry_date: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : null,
+            expiry_date: tokens.expires_in
+              ? Date.now() + tokens.expires_in * 1000
+              : null,
           },
         },
       },
       { strict: false }
     ).exec();
 
-    return res.redirect(APP_HOME + "?gdrive=connected");
+    // ✅ Redirect to SPA anchor (avoids React Router 404/redirects)
+    return res.redirect(`${redirect}#/gdrive-connected`);
   } catch (e) {
     const msg = encodeURIComponent(String(e?.message || e));
     return res.redirect(`${APP_HOME}?gdrive_error=${msg}`);
   }
 });
 
-// Status (per logged-in user)
+// Connection status (per logged-in user)
 router.get("/status", (req, res) => {
   const g = req.user?.gdrive;
   res.json({
