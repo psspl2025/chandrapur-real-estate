@@ -1,8 +1,5 @@
 {
   "rewrites": [
-    {
-      "source": "/api/(.*)",
-      "destination": "https://api.psspl.pawanssiddhi.in/$1"
-    }
+    { "source": "/api/:path*", "destination": "https://api.psspl.pawanssiddhi.in/api/:path*" }
   ]
 }
