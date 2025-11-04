@@ -1,3 +1,4 @@
+// src/middleware/auth.js
 import jwt from "jsonwebtoken";
 
 /** ===== Config ===== */
@@ -10,24 +11,10 @@ const {
   MASTER_ADMIN_EMAIL = "",
 } = process.env;
 
-const COOKIE_NAME = ENV_COOKIE_NAME || "access"; // align with .env
+// 👉 Use the same name everywhere (default per your spec)
+export const COOKIE_NAME = ENV_COOKIE_NAME || "access_token";
 const isProd = NODE_ENV === "production";
 const secureFlag = String(COOKIE_SECURE).toLowerCase() === "true";
-
-/** ================== Cookie Options ================== */
-function cookieOpts() {
-  return {
-    httpOnly: true,
-    path: "/",
-    // Required for cross-subdomain auth when frontend is a different origin
-    sameSite: isProd ? "none" : "lax",
-    // Secure is mandatory when SameSite=None
-    secure: isProd ? true : secureFlag,
-    // Set domain in prod so api.psspl.* cookie is sent to psspl.*
-    domain: isProd ? COOKIE_DOMAIN : undefined,
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7d
-  };
-}
 
 /** ================== JWT Helpers ================== */
 function signToken(payload, expiresIn = "7d") {
@@ -51,15 +38,53 @@ export function buildClaims({ id, _id, email, role, roles, ...rest }) {
   };
 }
 
+/** ================== Cookie Writers (EXACT in prod) ================== */
 export function signAccessCookie(res, userPayload, expiresIn = "7d") {
   const claims = buildClaims(userPayload);
   const token = signToken(claims, expiresIn);
-  res.cookie(COOKIE_NAME, token, cookieOpts());
+
+  const maxAge = 7 * 24 * 60 * 60 * 1000; // 7d
+
+  if (isProd) {
+    // ⚠️ EXACT attributes you requested for cross-subdomain cookie
+    res.cookie(COOKIE_NAME, token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "none",
+      domain: COOKIE_DOMAIN, // e.g. ".pawanssiddhi.in" (must include leading dot)
+      path: "/",
+      maxAge,
+    });
+  } else {
+    // Dev: readable from same-origin only
+    res.cookie(COOKIE_NAME, token, {
+      httpOnly: true,
+      secure: secureFlag, // usually false on http://localhost
+      sameSite: "lax",
+      path: "/",
+      maxAge,
+    });
+  }
   return token;
 }
 
 export function clearAccessCookie(res) {
-  res.clearCookie(COOKIE_NAME, { ...cookieOpts(), maxAge: 0 });
+  if (isProd) {
+    res.clearCookie(COOKIE_NAME, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "none",
+      domain: COOKIE_DOMAIN,
+      path: "/",
+    });
+  } else {
+    res.clearCookie(COOKIE_NAME, {
+      httpOnly: true,
+      secure: secureFlag,
+      sameSite: "lax",
+      path: "/",
+    });
+  }
 }
 
 /** ================== Middleware ================== */
