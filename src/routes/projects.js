@@ -2,6 +2,7 @@
 import express from "express";
 import Project from "../models/Project.js";
 import Property from "../models/Property.js";
+import User from "../models/User.js";
 
 import multer from "multer";
 import path from "path";
@@ -12,158 +13,72 @@ import { google } from "googleapis";
 
 const router = express.Router();
 
-/* ====================== GOOGLE DRIVE OAUTH (SINGLE USER) ====================== */
+/* ====================== ENV ====================== */
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// simple token store on disk (replace with DB if you want)
-const OAUTH_TOKEN_PATH = path.join(__dirname, "..", "..", "oauth_token.json");
-
-function readSavedToken() {
-  try {
-    return JSON.parse(fs.readFileSync(OAUTH_TOKEN_PATH, "utf8"));
-  } catch {
-    return null;
-  }
-}
-function saveToken(token) {
-  fs.writeFileSync(OAUTH_TOKEN_PATH, JSON.stringify(token, null, 2), "utf8");
-}
-
-// ---- env (trim everything to avoid invisible whitespace issues)
 const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID || "").trim();
 const GOOGLE_CLIENT_SECRET = (process.env.GOOGLE_CLIENT_SECRET || "").trim();
 const GOOGLE_REDIRECT_URI = (process.env.GOOGLE_REDIRECT_URI || "").trim();
 const GDRIVE_FOLDER_ENV = (process.env.GDRIVE_FOLDER_ID || "").trim();
+const APP_HOME = process.env.WEB_AFTER_LOGIN || "https://psspl.pawanssiddhi.in/";
 
-// accept folder URL or just ID
+/** accept folder URL or just ID */
 function extractFolderId(v) {
   if (!v) return undefined;
-  const m = String(v).match(/[-\w]{25,}/); // typical GDrive id length/pattern
+  const m = String(v).match(/[-\w]{25,}/);
   return m ? m[0] : v;
 }
 const GDRIVE_FOLDER_ID = extractFolderId(GDRIVE_FOLDER_ENV);
 
 function getOAuth2Client() {
   if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REDIRECT_URI) {
-    throw new Error(
-      "[GDRIVE] Missing GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REDIRECT_URI"
-    );
+    throw new Error("[GDRIVE] Missing GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REDIRECT_URI");
   }
-  return new google.auth.OAuth2(
-    GOOGLE_CLIENT_ID,
-    GOOGLE_CLIENT_SECRET,
-    GOOGLE_REDIRECT_URI
-  );
+  return new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI);
 }
 
-async function getDriveClient() {
+/* ====================== AUTH HELPERS ====================== */
+const requireAuth = (req, res, next) => {
+  if (!req.user?.uid) return res.status(401).json({ error: "login_required" });
+  next();
+};
+
+/** Load user's Drive credentials from DB; returns an authenticated drive client */
+async function getUserDrive(req) {
+  const uid = req.user?.uid;
+  if (!uid) throw new Error("auth_required");
+
+  const u = await User.findById(uid).select("gdrive").lean();
+  const g = u?.gdrive || {};
+  if (!g.access_token && !g.refresh_token) {
+    const url = "/api/auth/google/login?redirect=" + encodeURIComponent(APP_HOME);
+    const e = new Error(
+      `Google Drive not connected yet. Open this once to authorize: ${new URL(url, APP_HOME).toString()}`
+    );
+    e.code = "NO_TOKENS";
+    throw e;
+  }
+
   const oauth2 = getOAuth2Client();
-  const token = readSavedToken();
-  if (!token) {
-    const url = oauth2.generateAuthUrl({
-      access_type: "offline",
-      prompt: "consent",
-      scope: ["https://www.googleapis.com/auth/drive.file"],
-      redirect_uri: GOOGLE_REDIRECT_URI,
-    });
-    return { drive: null, needsAuth: true, url };
+  // Set credentials (access token may be stale; refresh_token will auto-refresh)
+  oauth2.setCredentials({
+    access_token: g.access_token || undefined,
+    refresh_token: g.refresh_token || undefined,
+    scope: g.scope || undefined,
+    token_type: g.token_type || undefined,
+    expiry_date: g.expiry_date || undefined,
+  });
+
+  // Force a lightweight token refresh check
+  try {
+    await oauth2.getAccessToken(); // triggers refresh if expired and refresh_token exists
+  } catch (_) {
+    // ignore; google lib refreshes lazily as well
   }
-  oauth2.setCredentials(token);
-  return { drive: google.drive({ version: "v3", auth: oauth2 }), needsAuth: false };
+
+  return google.drive({ version: "v3", auth: oauth2 });
 }
-
-async function uploadToPersonalDrive(localPath, { originalname, mimetype }) {
-  const { drive, needsAuth, url } = await getDriveClient();
-  if (needsAuth) {
-    throw new Error(
-      `Google Drive not connected yet. Open this once to authorize: ${url}`
-    );
-  }
-
-  console.log("[GDRIVE] Uploading:", { originalname, mimetype, GDRIVE_FOLDER_ID });
-  const createRes = await drive.files.create({
-    requestBody: {
-      name: originalname,
-      parents: GDRIVE_FOLDER_ID ? [GDRIVE_FOLDER_ID] : undefined,
-      mimeType: mimetype || "application/octet-stream",
-    },
-    media: {
-      mimeType: mimetype || "application/octet-stream",
-      body: fs.createReadStream(localPath),
-    },
-    fields: "id,name,webViewLink,webContentLink",
-  });
-
-  // optional: make link public (remove/adjust to keep private)
-  try {
-    await drive.permissions.create({
-      fileId: createRes.data.id,
-      requestBody: { role: "reader", type: "anyone" },
-    });
-  } catch (e) {
-    console.warn("[GDRIVE] permissions.create failed (continuing):", e?.message || e);
-  }
-
-  const meta = await drive.files.get({
-    fileId: createRes.data.id,
-    fields: "id,name,webViewLink,webContentLink",
-  });
-
-  console.log("[GDRIVE] Uploaded OK:", meta.data);
-  return {
-    fileId: meta.data.id,
-    name: meta.data.name,
-    webViewLink: meta.data.webViewLink,
-    webContentLink: meta.data.webContentLink,
-  };
-}
-
-/* ---------------- OAuth routes (MUST exist for /api/projects/google/*) ---------------- */
-router.get("/google/auth", (req, res) => {
-  try {
-    const oauth2 = getOAuth2Client();
-    const url = oauth2.generateAuthUrl({
-      access_type: "offline",
-      prompt: "consent",
-      scope: ["https://www.googleapis.com/auth/drive.file"],
-      redirect_uri: GOOGLE_REDIRECT_URI, // explicit
-    });
-
-    console.log("[GDRIVE] Auth URL:", url);
-    if (req.query.show === "1") return res.type("text/plain").send(url); // debug
-    return res.redirect(url);
-  } catch (e) {
-    return res.status(500).send("OAuth init error: " + e.message);
-  }
-});
-
-router.get("/google/callback", async (req, res) => {
-  try {
-    const { code } = req.query;
-    if (!code) return res.status(400).send('Missing "code" in query.');
-    const oauth2 = getOAuth2Client();
-
-    // pass redirect_uri explicitly in the token exchange
-    const { tokens } = await oauth2.getToken({ code, redirect_uri: GOOGLE_REDIRECT_URI });
-    saveToken(tokens);
-    return res.send("Google Drive connected. You can close this tab.");
-  } catch (e) {
-    console.error(e);
-    return res.status(500).send("OAuth callback error: " + e.message);
-  }
-});
-
-// quick env sanity check
-router.get("/google/debug", (_req, res) => {
-  res.json({
-    hasClientId: !!GOOGLE_CLIENT_ID,
-    hasClientSecret: !!GOOGLE_CLIENT_SECRET,
-    redirectUri: GOOGLE_REDIRECT_URI,
-    folderId: GDRIVE_FOLDER_ID || null,
-  });
-});
-/* ================================================================================ */
 
 /* ============================ UPLOADS (LOCAL TEMP) ============================= */
 const UPLOAD_DIR = path.join(__dirname, "..", "..", "public", "uploads");
@@ -183,14 +98,12 @@ const ok = (s) => String(s).toUpperCase() === "APPROVED";
 const sum = (arr, pick) => (arr || []).reduce((a, b) => a + Number(pick(b) || 0), 0);
 
 function findDoc(docs, name) {
-  return (docs || []).find(
-    (x) => (x.name || "").toLowerCase() === String(name).toLowerCase()
-  );
+  return (docs || []).find((x) => (x.name || "").toLowerCase() === String(name).toLowerCase());
 }
 
 function computeProjectSummary(p) {
   const plots = p.plots || [];
-    const totalPlotableSqm = sum(plots, (x) => x.area_sqm);
+  const totalPlotableSqm = sum(plots, (x) => x.area_sqm);
   const totalPlotableSqft = sum(plots, (x) => x.area_sqft);
   const totalPlotableHR = sum(plots, (x) => x.hr);
   const ratePerSqft = p.financials?.ratePerSqft || 0;
@@ -201,16 +114,12 @@ function computeProjectSummary(p) {
   const docs = p.documents || [];
   const checklist = {
     applicationLetter: ok(findDoc(docs, "Official Application letter")?.status),
-    approvalLetter: ok(
-      findDoc(docs, "Official Permission letter(Approval letter)")?.status
-    ),
+    approvalLetter: ok(findDoc(docs, "Official Permission letter(Approval letter)")?.status),
     sevenTwelve: ok(findDoc(docs, "7/12")?.status),
     cmcApproval: ok(findDoc(docs, "CMC Approval")?.status),
     landSurveyMap: ok(findDoc(docs, "Land Survey Map 'ka prat'")?.status),
     tentativeLayout: ok(findDoc(docs, "Sanctioned Tentative layout map")?.status),
-    finalLayout: ok(
-      findDoc(docs, "Sanctioned Demarcated/Final layout map")?.status
-    ),
+    finalLayout: ok(findDoc(docs, "Sanctioned Demarcated/Final layout map")?.status),
     registryDoc: ok(findDoc(docs, "Registry Document")?.status),
   };
 
@@ -220,18 +129,11 @@ function computeProjectSummary(p) {
       findDoc(docs, "Official Application letter")?.file?.url ||
       null,
     approvalLetter:
-      findDoc(docs, "Official Permission letter(Approval letter)")?.file
-        ?.viewLink ||
+      findDoc(docs, "Official Permission letter(Approval letter)")?.file?.viewLink ||
       findDoc(docs, "Official Permission letter(Approval letter)")?.file?.url ||
       null,
-    sevenTwelve:
-      findDoc(docs, "7/12")?.file?.viewLink ||
-      findDoc(docs, "7/12")?.file?.url ||
-      null,
-    cmcApproval:
-      findDoc(docs, "CMC Approval")?.file?.viewLink ||
-      findDoc(docs, "CMC Approval")?.file?.url ||
-      null,
+    sevenTwelve: findDoc(docs, "7/12")?.file?.viewLink || findDoc(docs, "7/12")?.file?.url || null,
+    cmcApproval: findDoc(docs, "CMC Approval")?.file?.viewLink || findDoc(docs, "CMC Approval")?.file?.url || null,
     landSurveyMap:
       findDoc(docs, "Land Survey Map 'ka prat'")?.file?.viewLink ||
       findDoc(docs, "Land Survey Map 'ka prat'")?.file?.url ||
@@ -253,8 +155,7 @@ function computeProjectSummary(p) {
   const av = Number(p.financials?.totalAgreementValue || 0);
   const sd = Number(p.financials?.stampDuty || 0);
   const rf = Number(p.financials?.registrationFee || 0);
-  const addedTaxTDS =
-    sum(plots, (x) => x.added_tax) || Number(p.financials?.addedTax || 0);
+  const addedTaxTDS = sum(plots, (x) => x.added_tax) || Number(p.financials?.addedTax || 0);
   const registryValue = av + sd + rf;
   const totalRegistryValue = registryValue - addedTaxTDS;
 
@@ -297,7 +198,7 @@ function computeProjectSummary(p) {
       totalAgreementValue: av,
       stampDuty: sd,
       registrationFee: rf,
-      totalValue: totalRegistryValue, // compat with earlier UI
+      totalValue: totalRegistryValue,
       ratePerSqft,
       registryValue,
       totalRegistryValue,
@@ -324,8 +225,8 @@ router.post("/", async (req, res) => {
         location_admin: {
           state: "Maharashtra",
           district: req.body?.locationDetails?.district || "",
-          taluka:   req.body?.locationDetails?.tehsil   || "",
-          village:  req.body?.locationDetails?.mouza    || "",
+          taluka: req.body?.locationDetails?.tehsil || "",
+          village: req.body?.locationDetails?.mouza || "",
         },
         parcel: {
           survey_gat_no: req.body?.locationDetails?.surveyNo || "",
@@ -333,7 +234,8 @@ router.post("/", async (req, res) => {
         },
         integration: {
           search_tokens: [
-            doc.projectId, doc.projectName,
+            doc.projectId,
+            doc.projectName,
             req.body?.locationDetails?.district,
             req.body?.locationDetails?.mouza,
             req.body?.locationDetails?.tehsil,
@@ -341,7 +243,6 @@ router.post("/", async (req, res) => {
         },
       });
 
-      // also link on the project document
       doc.properties = Array.isArray(doc.properties) ? doc.properties : [];
       doc.properties.push(p._id);
       await doc.save();
@@ -382,9 +283,7 @@ router.get("/summary", async (req, res) => {
 });
 
 /**
- * Export Projects + Plots to Excel
- * KEEP THIS BEFORE any /:id routes to avoid matching "export.xlsx" as :id
- * GET /api/projects/export.xlsx?q=&district=&status=
+ * Export Projects + Plots to Excel (keep before :id routes)
  */
 router.get("/export.xlsx", async (req, res) => {
   try {
@@ -523,12 +422,8 @@ router.delete(`/:id(${OID})`, async (req, res) => {
     const proj = await Project.findById(req.params.id);
     if (!proj) return res.status(404).json({ error: "not found" });
 
-    // Collect property ids referenced on the project doc
     const referencedIds = (proj.properties || []).map(String);
 
-    // Delete properties that either:
-    // 1) are referenced in proj.properties, OR
-    // 2) are linked via the `project` field
     const filters = [];
     if (referencedIds.length) filters.push({ _id: { $in: referencedIds } });
     filters.push({ project: proj._id });
@@ -537,7 +432,6 @@ router.delete(`/:id(${OID})`, async (req, res) => {
     const delRes = await Property.deleteMany(deleteFilter);
     const deletedProps = delRes?.deletedCount || 0;
 
-    // Finally delete the project
     await proj.deleteOne();
 
     res.json({ ok: true, deletedProject: proj._id, deletedProperties: deletedProps });
@@ -547,26 +441,8 @@ router.delete(`/:id(${OID})`, async (req, res) => {
   }
 });
 
-// link property (✅ also stamps back-reference on the Property)
-router.post(`/:id(${OID})/link-property/:propertyId(${OID})`, async (req, res) => {
-  const { id, propertyId } = req.params;
-
-  const doc = await Project.findByIdAndUpdate(
-    id,
-    { $addToSet: { properties: propertyId } },
-    { new: true }
-  ).populate("properties");
-
-  if (!doc) return res.status(404).json({ error: "not found" });
-
-  // ensure property knows its project so cascades work
-  await Property.updateOne({ _id: propertyId }, { $set: { project: id } });
-
-  res.json(doc);
-});
-
 /* ----------------------- DOCUMENT UPLOADS (DRIVE) ----------------------- */
-router.post(`/:id(${OID})/documents/upload`, upload.single("file"), async (req, res) => {
+router.post(`/:id(${OID})/documents/upload`, requireAuth, upload.single("file"), async (req, res) => {
   try {
     const { id } = req.params;
     const { name, refNo, date } = req.body;
@@ -585,65 +461,74 @@ router.post(`/:id(${OID})/documents/upload`, upload.single("file"), async (req, 
     const p = await Project.findById(id);
     if (!p) return res.status(404).json({ error: "not found" });
 
+    // Ensure we have a drive client for this user
+    const drive = await getUserDrive(req); // throws if not connected
+
     let d = findDoc(p.documents, name);
     if (!d) {
       d = { name, status: "PENDING" };
       p.documents.push(d);
     }
 
-    // upload to Drive
-    const g = await uploadToPersonalDrive(req.file.path, {
-      originalname: req.file.originalname,
-      mimetype: req.file.mimetype,
+    // Upload to Drive
+    const createRes = await drive.files.create({
+      requestBody: {
+        name: req.file.originalname,
+        parents: GDRIVE_FOLDER_ID ? [GDRIVE_FOLDER_ID] : undefined,
+        mimeType: req.file.mimetype || "application/octet-stream",
+      },
+      media: {
+        mimeType: req.file.mimetype || "application/octet-stream",
+        body: fs.createReadStream(req.file.path),
+      },
+      fields: "id,name,webViewLink,webContentLink",
     });
 
-    // cleanup local temp
+    // Cleanup local temp
+    try { fs.unlinkSync(req.file.path); } catch {}
+
+    // Try to make link public (optional)
     try {
-      fs.unlinkSync(req.file.path);
-    } catch {}
+      await drive.permissions.create({
+        fileId: createRes.data.id,
+        requestBody: { role: "reader", type: "anyone" },
+      });
+    } catch (e) {
+      console.warn("[GDRIVE] permissions.create failed (continuing):", e?.message || e);
+    }
+
+    const meta = await drive.files.get({
+      fileId: createRes.data.id,
+      fields: "id,name,webViewLink,webContentLink",
+    });
 
     d.status = "APPROVED";
     if (refNo) d.refNo = refNo;
     if (date) d.date = new Date(date);
     d.file = {
       provider: "gdrive",
-      fileId: g.fileId,
-      filename: g.name,
+      fileId: meta.data.id,
+      filename: meta.data.name,
       mimetype: req.file.mimetype,
       size: req.file.size,
       uploadedAt: new Date(),
-      url: g.webViewLink, // keep compat with older UI code
-      viewLink: g.webViewLink,
-      downloadLink: g.webContentLink,
+      url: meta.data.webViewLink,
+      viewLink: meta.data.webViewLink,
+      downloadLink: meta.data.webContentLink,
     };
 
     await p.save();
-    console.log("[UPLOAD] Saved document on project:", { projectId: p._id, name, fileId: g.fileId });
+    console.log("[UPLOAD] Saved document on project:", { projectId: p._id, name, fileId: meta.data.id });
     res.json({ ok: true, document: d });
   } catch (e) {
     console.error("[UPLOAD] Error:", e);
-    res.status(400).json({ error: e.message });
-  }
-});
-
-// remove document file
-router.delete(`/:id(${OID})/documents`, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { name } = req.query;
-    if (!name) return res.status(400).json({ error: "name is required" });
-
-    const p = await Project.findById(id);
-    if (!p) return res.status(404).json({ error: "not found" });
-
-    const d = findDoc(p.documents, name);
-    if (!d) return res.status(404).json({ error: "document row not found" });
-
-    d.file = undefined;
-    d.status = "PENDING";
-    await p.save();
-    res.json({ ok: true });
-  } catch (e) {
+    // If user hasn't connected Drive, guide them
+    if (e.code === "NO_TOKENS") {
+      return res.status(400).json({
+        error: "gdrive_not_connected",
+        auth_url: "/api/auth/google/login?redirect=" + encodeURIComponent(APP_HOME),
+      });
+    }
     res.status(400).json({ error: e.message });
   }
 });
