@@ -13,6 +13,7 @@ import { connectDB } from "./db.js";
 // Models (for bootstrap)
 import User from "./models/User.js";
 import googleAuthRouter from "./routes/auth.google.js";
+import finalizeRouter from "./routes/auth.finalize.js";
 
 // Auth helpers/middleware & routers
 import { attachUser } from "./middleware/auth.js"; // parses JWT cookie → req.user
@@ -112,6 +113,7 @@ if (process.env.NODE_ENV !== "production") {
 }
 app.use("/api/users", usersRouter);
 app.use("/api/auth/google", googleAuthRouter);
+app.use("/api/auth", finalizeRouter);
 
 app.use("/api/public", publicRouter);
 app.use("/api/properties", propertiesRouter);

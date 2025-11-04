@@ -1,4 +1,3 @@
-// src/routes/auth.google.js
 import express from "express";
 import mongoose from "mongoose";
 import jwt from "jsonwebtoken";
@@ -24,7 +23,6 @@ const needConfig = (_req, res, next) => {
   next();
 };
 
-// Prevent all caching
 router.use((_req, res, next) => {
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.set("Pragma", "no-cache");
@@ -32,7 +30,6 @@ router.use((_req, res, next) => {
   next();
 });
 
-// Small helper for token exchange
 async function postFormWithTimeout(url, form, ms = 15000) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
@@ -51,12 +48,7 @@ async function postFormWithTimeout(url, form, ms = 15000) {
 
 /* --------------------------- Routes ------------------------------ */
 
-// Ping
-router.get("/ping", (_req, res) => res.json({ ok: true }));
-
-/**
- * Step 1 – Start OAuth flow
- */
+// Start OAuth
 router.get("/login", needConfig, (req, res) => {
   const cookieUid = req.user?.uid || req.user?.id || req.user?._id;
   const queryFallback = (req.query.uid || req.query.state || "").toString();
@@ -67,9 +59,7 @@ router.get("/login", needConfig, (req, res) => {
     return res.status(401).json({ error: "login_required" });
   }
 
-  // include both uid and redirect in state
   const state = encodeURIComponent(JSON.stringify({ uid, redirect }));
-
   const params = new URLSearchParams({
     client_id: GOOGLE_CLIENT_ID,
     redirect_uri: GOOGLE_REDIRECT_URI,
@@ -80,16 +70,10 @@ router.get("/login", needConfig, (req, res) => {
     prompt: "consent",
     state,
   });
-
   res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
 });
 
-/**
- * Step 2 – Google callback
- *  • exchanges code for tokens
- *  • stores them in DB
- *  • issues a short-lived JWT in URL hash → frontend
- */
+// OAuth callback (same-origin)
 router.get("/callback", needConfig, async (req, res) => {
   try {
     const code = String(req.query.code || "");
@@ -100,17 +84,12 @@ router.get("/callback", needConfig, async (req, res) => {
     try {
       stateObj = JSON.parse(decodeURIComponent(stateRaw || "{}"));
     } catch {}
-    const stateUid = stateObj.uid || "";
+    const uid = stateObj.uid || "";
     const redirect = stateObj.redirect || APP_HOME;
-
-    const cookieUid = req.user?.uid || req.user?.id || req.user?._id || "";
-    const userId = String(cookieUid || stateUid);
-
-    if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
-      return res.redirect(APP_HOME + "?gdrive_error=not_logged_in");
+    if (!mongoose.Types.ObjectId.isValid(uid)) {
+      return res.redirect(APP_HOME + "?gdrive_error=invalid_uid");
     }
 
-    // Exchange code → token
     const form = new URLSearchParams({
       code,
       client_id: GOOGLE_CLIENT_ID,
@@ -118,12 +97,7 @@ router.get("/callback", needConfig, async (req, res) => {
       redirect_uri: GOOGLE_REDIRECT_URI,
       grant_type: "authorization_code",
     });
-
-    const tokenResp = await postFormWithTimeout(
-      "https://oauth2.googleapis.com/token",
-      form,
-      15000
-    );
+    const tokenResp = await postFormWithTimeout("https://oauth2.googleapis.com/token", form);
     const tokens = await tokenResp.json();
 
     if (!tokenResp.ok) {
@@ -131,9 +105,8 @@ router.get("/callback", needConfig, async (req, res) => {
       return res.redirect(`${redirect}?gdrive_error=${reason}`);
     }
 
-    // Save tokens in user doc
     await User.findByIdAndUpdate(
-      userId,
+      uid,
       {
         $set: {
           gdrive: {
@@ -148,26 +121,16 @@ router.get("/callback", needConfig, async (req, res) => {
         },
       },
       { strict: false }
-    ).exec();
-
-    // short-lived exchange token (5 min)
-    const exchangeToken = jwt.sign(
-      { uid: userId },
-      JWT_SECRET,
-      { expiresIn: "5m" }
     );
 
-    // redirect to frontend hash with token
-    return res.redirect(`${redirect}#/gdrive-callback?token=${encodeURIComponent(exchangeToken)}`);
+    return res.redirect(`${redirect}#/gdrive-connected`);
   } catch (e) {
     const msg = encodeURIComponent(String(e?.message || e));
     return res.redirect(`${APP_HOME}?gdrive_error=${msg}`);
   }
 });
 
-/**
- * Step 3 – Connection status
- */
+// Status endpoint
 router.get("/status", (req, res) => {
   const g = req.user?.gdrive;
   res.json({

@@ -1,8 +1,8 @@
 {
-  "redirects": [
-    { "source": "/index.html", "destination": "/", "permanent": false }
-  ],
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "source": "/api/(.*)",
+      "destination": "https://api.psspl.pawanssiddhi.in/$1"
+    }
   ]
 }

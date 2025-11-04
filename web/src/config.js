@@ -1,2 +1,2 @@
-// web/src/config.js
-export const API_BASE = import.meta.env.VITE_API_BASE || "/api";
+// Use same-origin API base
+export const API_BASE = "/api";
