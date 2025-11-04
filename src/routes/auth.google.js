@@ -1,6 +1,7 @@
 // src/routes/auth.google.js
 import express from "express";
 import mongoose from "mongoose";
+import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 
 const router = express.Router();
@@ -10,6 +11,7 @@ const {
   GOOGLE_CLIENT_SECRET,
   GOOGLE_REDIRECT_URI,
   WEB_AFTER_LOGIN,
+  JWT_SECRET,
 } = process.env;
 
 const APP_HOME = WEB_AFTER_LOGIN || "https://psspl.pawanssiddhi.in/";
@@ -53,8 +55,7 @@ async function postFormWithTimeout(url, form, ms = 15000) {
 router.get("/ping", (_req, res) => res.json({ ok: true }));
 
 /**
- * Start OAuth: builds Google consent URL and redirects user.
- * Accepts optional ?redirect=/somepath param to bring them back.
+ * Step 1 – Start OAuth flow
  */
 router.get("/login", needConfig, (req, res) => {
   const cookieUid = req.user?.uid || req.user?.id || req.user?._id;
@@ -66,7 +67,7 @@ router.get("/login", needConfig, (req, res) => {
     return res.status(401).json({ error: "login_required" });
   }
 
-  // Pass both uid and redirect target as JSON in state
+  // include both uid and redirect in state
   const state = encodeURIComponent(JSON.stringify({ uid, redirect }));
 
   const params = new URLSearchParams({
@@ -84,8 +85,10 @@ router.get("/login", needConfig, (req, res) => {
 });
 
 /**
- * OAuth callback: exchanges code for tokens and saves them
- * under user.gdrive; redirects back to SPA (default #/gdrive-connected)
+ * Step 2 – Google callback
+ *  • exchanges code for tokens
+ *  • stores them in DB
+ *  • issues a short-lived JWT in URL hash → frontend
  */
 router.get("/callback", needConfig, async (req, res) => {
   try {
@@ -93,7 +96,6 @@ router.get("/callback", needConfig, async (req, res) => {
     const stateRaw = String(req.query.state || "");
     if (!code) return res.redirect(APP_HOME + "?gdrive_error=missing_code");
 
-    // Extract state object safely
     let stateObj = {};
     try {
       stateObj = JSON.parse(decodeURIComponent(stateRaw || "{}"));
@@ -101,7 +103,6 @@ router.get("/callback", needConfig, async (req, res) => {
     const stateUid = stateObj.uid || "";
     const redirect = stateObj.redirect || APP_HOME;
 
-    // Prefer cookie user; fallback to state UID
     const cookieUid = req.user?.uid || req.user?.id || req.user?._id || "";
     const userId = String(cookieUid || stateUid);
 
@@ -130,7 +131,7 @@ router.get("/callback", needConfig, async (req, res) => {
       return res.redirect(`${redirect}?gdrive_error=${reason}`);
     }
 
-    // Save tokens
+    // Save tokens in user doc
     await User.findByIdAndUpdate(
       userId,
       {
@@ -149,15 +150,24 @@ router.get("/callback", needConfig, async (req, res) => {
       { strict: false }
     ).exec();
 
-    // ✅ Redirect to SPA anchor (avoids React Router 404/redirects)
-    return res.redirect(`${redirect}#/gdrive-connected`);
+    // short-lived exchange token (5 min)
+    const exchangeToken = jwt.sign(
+      { uid: userId },
+      JWT_SECRET,
+      { expiresIn: "5m" }
+    );
+
+    // redirect to frontend hash with token
+    return res.redirect(`${redirect}#/gdrive-callback?token=${encodeURIComponent(exchangeToken)}`);
   } catch (e) {
     const msg = encodeURIComponent(String(e?.message || e));
     return res.redirect(`${APP_HOME}?gdrive_error=${msg}`);
   }
 });
 
-// Connection status (per logged-in user)
+/**
+ * Step 3 – Connection status
+ */
 router.get("/status", (req, res) => {
   const g = req.user?.gdrive;
   res.json({
